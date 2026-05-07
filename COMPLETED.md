@@ -18,6 +18,23 @@ cross-commit wave context that a raw log cannot reconstruct.
 
 ## Wave-by-wave dispatch history
 
+### Wave 47 (2026-05-07) — TODO #11 ResponseCorrection coordination
+
+- Closed the remaining Trellis ADR 0066 coordination row by landing the
+  Formspec `ResponseCorrection` producer shape that Trellis correction-
+  preservation reports were waiting on.
+- Formspec Respondent Ledger now defines `response.correction-recorded` with
+  `recordKind = "responseCorrection"` and a `data` payload carrying the
+  correction target event hash, corrected field subset, original/corrected
+  field values, correction reason, and authorization event hash.
+- Synced parent `PLANNING.md` PLN-0050 and `TODO-STACK.md`; WOS
+  `CorrectionAuthorized` remains the sibling governance authorization record,
+  while Trellis can report both readable `correctionAuthorized` and
+  `responseCorrection` payloads.
+
+Verification:
+- `uv run --with pytest --with jsonschema python -m pytest tests/conformance/schemas/test_respondent_ledger_schema.py -q`.
+
 ### Wave 46 (2026-05-07) — TODO #14 stack security disclosure policy
 
 - Added root `SECURITY.md` with private vulnerability-reporting intake,

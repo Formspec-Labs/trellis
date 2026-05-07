@@ -269,8 +269,11 @@ adopter-triggered work.
 
 11. **ADR 0066 execution — amendment / supersession / rescission / correction**
     — **L**.
-    *Land stack implementation* (ADR 0066 **accepted** 2026-05-06 — execution
-    remains open) —
+    **Closed 2026-05-07 (Waves 40 and 47); retained here until the next
+    planned TODO renumbering pass.**
+    *Land stack implementation* (ADR 0066 **accepted** 2026-05-06 — Trellis
+    TODO execution closed; sibling WOS/server rows continue in their own
+    trackers) —
     [`../thoughts/adr/0066-stack-amendment-and-supersession.md`](../thoughts/adr/0066-stack-amendment-and-supersession.md).
     WOS checklist:
     [`../work-spec/TODO.md#adr-0066-exec-checklist`](../work-spec/TODO.md#adr-0066-exec-checklist).
@@ -307,8 +310,15 @@ adopter-triggered work.
       `ExportManifestPayload.extensions["trellis.export.supersession-graph.v1"]`
       binds optional `064-supersession-graph.json` with `graph_digest`; TR-CORE-170
       pins canonical JSON shape and verifier obligations.
-    + [ ] Coordinate remaining Formspec `ResponseCorrection` + WOS payload
-      shapes for correction-preservation reports.
+    + [x] Coordinate remaining Formspec `ResponseCorrection` + WOS payload
+      shapes for correction-preservation reports. Formspec now emits
+      `response.correction-recorded` with `recordKind = "responseCorrection"`
+      and a Trellis-readable `data` payload carrying
+      `correctionTargetEventHash`, `correctedFieldSet`, `fieldValues`,
+      `reason`, and `authorizationEventHash`; WOS already carries the sibling
+      `CorrectionAuthorized` shape. Trellis correction-preservation report
+      output can read both `correctionAuthorized` and `responseCorrection`
+      records.
     + [x] Cross-chain normative graph shape: `064-supersession-graph.json` at
       bundle root carries `head_chain_id` / `predecessors`; cycles are integrity
       failures under Core §19 step 6e.
