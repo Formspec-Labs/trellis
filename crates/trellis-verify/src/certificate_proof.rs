@@ -63,6 +63,17 @@ pub trait ResponseProofResolver {
         &self,
         payload_bytes: &[u8],
     ) -> Result<Option<CertificateResponseProof>, ResolverError>;
+
+    /// Returns the resolver-domain principal reference embedded in the
+    /// signing-event payload, when the resolver recognizes the payload.
+    /// Used by Trellis Core for ADR 0007 §"Verifier obligations" step 6
+    /// chain-summary equivalence. Returns `None` when the payload is not
+    /// a signing event the resolver can interpret. Reading the principal
+    /// from consumer-domain field names is the resolver's responsibility,
+    /// not Trellis Core's.
+    fn resolve_principal_ref(&self, _payload_bytes: &[u8]) -> Option<String> {
+        None
+    }
 }
 
 /// No-op resolver used by Trellis Core's default `RecordValidator` impl.

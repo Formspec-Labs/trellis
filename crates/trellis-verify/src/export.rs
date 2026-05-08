@@ -37,7 +37,7 @@ pub fn verify_export_zip_with_validator(
     export_zip: &[u8],
     validator: &dyn RecordValidator,
 ) -> VerificationWithDomain {
-    let trellis = verify_export_zip(export_zip);
+    let trellis = verify_export_zip_with_record_validator(export_zip, validator);
     if !trellis.structure_verified {
         return VerificationWithDomain {
             trellis,
@@ -144,6 +144,17 @@ fn encode_manifest_extensions(
 
 /// Verifies a complete export ZIP.
 pub fn verify_export_zip(export_zip: &[u8]) -> VerificationReport {
+    verify_export_zip_with_record_validator(export_zip, &())
+}
+
+/// Verifies a complete export ZIP, threading a `RecordValidator` so the
+/// validator's `response_proof_resolver()` reaches Core's
+/// certificate-finalization step. Used internally by
+/// [`verify_export_zip_with_validator`].
+pub(crate) fn verify_export_zip_with_record_validator(
+    export_zip: &[u8],
+    record_validator: &dyn RecordValidator,
+) -> VerificationReport {
     let archive = match parse_export_zip(export_zip) {
         Ok(archive) => archive,
         Err(error) => {
@@ -445,7 +456,7 @@ pub fn verify_export_zip(export_zip: &[u8]) -> VerificationReport {
             classify_tamper: false,
             expected_ledger_scope: Some(scope.as_slice()),
             payload_blobs: Some(&payload_blobs),
-            record_validator: &(),
+            record_validator,
         },
     )
     .trellis;

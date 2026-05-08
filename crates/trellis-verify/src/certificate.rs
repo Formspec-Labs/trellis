@@ -2,13 +2,13 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
 use trellis_types::{domain_separated_sha256, sha256_bytes};
-use trellis_types::{map_lookup_map, map_lookup_text};
 
 use super::{CERTIFICATE_EVENT_EXTENSION, PRESENTATION_ARTIFACT_DOMAIN};
+use crate::certificate_proof::ResponseProofResolver;
 use crate::kinds::VerificationFailureKind;
-use crate::parse::{decode_event_details, decode_value, parse_certificate_catalog_entries};
+use crate::parse::{decode_event_details, parse_certificate_catalog_entries};
 use crate::types::*;
-use crate::util::{hex_string, parse_sha256_text};
+use crate::util::hex_string;
 
 /// ADR 0007 §"Verifier obligations" cross-event finalization. Step 1 runs
 /// in [`decode_certificate_payload`] (CDDL + per-event chain-summary
@@ -43,6 +43,7 @@ pub(crate) fn finalize_certificates_of_completion(
     event_lookup_pool: &[EventDetails],
     event_by_hash_idx: &BTreeMap<[u8; 32], usize>,
     payload_blobs: Option<&BTreeMap<[u8; 32], Vec<u8>>>,
+    resolver: &dyn ResponseProofResolver,
     event_failures: &mut Vec<VerificationFailure>,
 ) -> Vec<CertificateOfCompletionOutcome> {
     if payloads.is_empty() {
@@ -147,7 +148,7 @@ pub(crate) fn finalize_certificates_of_completion(
                 ));
                 continue;
             };
-            if let Some(principal_ref) = principal_ref_from_payload(&payload_bytes)
+            if let Some(principal_ref) = resolver.resolve_principal_ref(&payload_bytes)
                 && display.principal_ref != principal_ref
             {
                 outcome.chain_summary_consistent = false;
@@ -183,8 +184,15 @@ pub(crate) fn finalize_certificates_of_completion(
                 else {
                     continue;
                 };
-                let Some(record_response_hash) = response_ref_from_payload(&payload_bytes) else {
-                    continue;
+                let record_response_hash = match resolver.resolve(&payload_bytes) {
+                    Ok(Some(proof)) => proof.response_hash,
+                    Ok(None) => continue,
+                    Err(_resolver_err) => {
+                        // Phase M leaves this as `continue` to preserve
+                        // current behavior. Phase N will replace with a
+                        // fail-closed `MalformedResponseDigest` failure.
+                        continue;
+                    }
                 };
                 had_resolvable_response = true;
                 if record_response_hash == response_ref {
@@ -218,21 +226,6 @@ fn readable_payload_for_certificate(
             payload_blobs.and_then(|blobs| blobs.get(&target.content_hash).cloned())
         }
     }
-}
-
-fn response_ref_from_payload(payload_bytes: &[u8]) -> Option<[u8; 32]> {
-    let value = decode_value(payload_bytes).ok()?;
-    let map = value.as_map()?;
-    let data = map_lookup_map(map, "data").ok()?;
-    let response_ref = map_lookup_text(data, "formspecResponseRef").ok()?;
-    parse_sha256_text(&response_ref).ok()
-}
-
-fn principal_ref_from_payload(payload_bytes: &[u8]) -> Option<String> {
-    let value = decode_value(payload_bytes).ok()?;
-    let map = value.as_map()?;
-    let data = map_lookup_map(map, "data").ok()?;
-    map_lookup_text(data, "signerId").ok()
 }
 
 /// Field-wise agreement check between a catalog row and the in-chain

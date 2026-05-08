@@ -416,18 +416,34 @@ mod tests {
             bool_field(root, expected_report, "readability_verified")
         );
         if let Some(expected_kind) = expected_kind {
-            assert_eq!(
-                first_wos_failure(report).map(|finding| finding.kind.as_str()),
-                Some(expected_kind)
-            );
+            // First check `wos_findings` (DomainFinding emitted from WOS
+            // validators); fall back to Trellis-Core `event_failures` when
+            // the kind is a Core-emitted failure routed through the WOS
+            // path because the resolution required a WOS resolver
+            // (e.g. `response_ref_mismatch`).
+            let actual_kind = first_wos_failure(report)
+                .map(|finding| finding.kind.as_str())
+                .or_else(|| {
+                    report
+                        .trellis
+                        .event_failures
+                        .first()
+                        .map(|failure| failure.kind.as_str())
+                });
+            assert_eq!(actual_kind, Some(expected_kind));
         }
         if let Some(expected_event_id) = expected_event_id {
-            assert_eq!(
-                first_wos_failure(report)
-                    .and_then(|finding| finding.event_hash)
-                    .map(|hash| hex_string(&hash)),
-                Some(expected_event_id.to_string())
-            );
+            let actual_event_id = first_wos_failure(report)
+                .and_then(|finding| finding.event_hash)
+                .map(|hash| hex_string(&hash))
+                .or_else(|| {
+                    report
+                        .trellis
+                        .event_failures
+                        .first()
+                        .map(|failure| failure.location.clone())
+                });
+            assert_eq!(actual_event_id, Some(expected_event_id.to_string()));
         }
     }
 
@@ -465,6 +481,7 @@ mod tests {
                 | "missing_intake_handoff_catalog"
                 | "missing_signature_catalog"
                 | "rescission_terminality_violation"
+                | "response_ref_mismatch"
                 | "signature_affirmation_payload_invalid"
                 | "signature_affirmation_payload_unreadable"
                 | "signature_catalog_digest_mismatch"

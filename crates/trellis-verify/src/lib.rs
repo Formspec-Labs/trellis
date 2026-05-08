@@ -832,6 +832,7 @@ pub(crate) fn verify_event_set_with_classes(
         &event_lookup_pool,
         &event_by_hash_idx,
         payload_blobs,
+        record_validator.response_proof_resolver(),
         &mut event_failures,
     );
 

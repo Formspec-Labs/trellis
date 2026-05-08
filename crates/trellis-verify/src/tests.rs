@@ -9,6 +9,7 @@ use trellis_types::{CONTENT_DOMAIN, domain_separated_sha256};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::certificate_proof::NoopResponseProofResolver;
 use crate::export::export_archive_for_tests;
 use crate::interop_sidecar::{is_interop_sidecar_path_valid, verify_interop_sidecars};
 use crate::kinds::{VerificationFailureKind, VerifyErrorKind};
@@ -2085,6 +2086,7 @@ fn finalize_certificates_accumulates_outcome_per_event() {
         &[],
         &BTreeMap::new(),
         None,
+        &NoopResponseProofResolver,
         &mut event_failures,
     );
     assert_eq!(outcomes.len(), 1);
@@ -2132,6 +2134,7 @@ fn finalize_certificates_flags_id_collision_for_disagreeing_payloads() {
         &[],
         &BTreeMap::new(),
         None,
+        &NoopResponseProofResolver,
         &mut event_failures,
     );
     assert_eq!(outcomes.len(), 2);
@@ -2160,6 +2163,7 @@ fn finalize_certificates_no_id_collision_when_payloads_agree() {
         &[],
         &BTreeMap::new(),
         None,
+        &NoopResponseProofResolver,
         &mut event_failures,
     );
     assert!(
@@ -2171,6 +2175,28 @@ fn finalize_certificates_no_id_collision_when_payloads_agree() {
 
 #[test]
 fn finalize_certificates_flags_principal_ref_mismatch() {
+    // Trellis Core MUST NOT inspect WOS or Formspec field names directly.
+    // The principal-ref reading lives in `trellis-verify-wos` behind the
+    // `ResponseProofResolver` boundary; this Core test feeds Core a stub
+    // resolver that returns a fixed principal-ref so the chain-summary
+    // mismatch path can be exercised without consumer-domain decoding.
+    use crate::certificate_proof::{
+        CertificateResponseProof, ResolverError, ResponseProofResolver,
+    };
+
+    struct FixedPrincipalRefResolver(&'static str);
+    impl ResponseProofResolver for FixedPrincipalRefResolver {
+        fn resolve(
+            &self,
+            _payload_bytes: &[u8],
+        ) -> Result<Option<CertificateResponseProof>, ResolverError> {
+            Ok(None)
+        }
+        fn resolve_principal_ref(&self, _payload_bytes: &[u8]) -> Option<String> {
+            Some(self.0.to_string())
+        }
+    }
+
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/vectors/append/019-wos-signature-affirmation/expected-event.cbor");
     let signed = fs::read(&fixture).unwrap();
@@ -2195,6 +2221,7 @@ fn finalize_certificates_flags_principal_ref_mismatch() {
         &pool,
         &by_hash,
         None,
+        &FixedPrincipalRefResolver("urn:trellis:principal:actual-signer"),
         &mut event_failures,
     );
 
@@ -2225,6 +2252,7 @@ fn finalize_certificates_flags_attestation_when_signature_malformed() {
         &[],
         &BTreeMap::new(),
         None,
+        &NoopResponseProofResolver,
         &mut event_failures,
     );
     assert_eq!(outcomes.len(), 1);
@@ -2260,6 +2288,7 @@ fn finalize_certificates_genesis_path_marks_attachment_resolved_true() {
         &[],
         &BTreeMap::new(),
         None,
+        &NoopResponseProofResolver,
         &mut event_failures,
     );
     assert_eq!(outcomes.len(), 1);

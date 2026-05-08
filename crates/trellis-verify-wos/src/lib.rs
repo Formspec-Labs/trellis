@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod catalog;
+mod certificate_resolver;
 mod clock_semantics;
 mod event_types;
 mod findings;
@@ -14,6 +15,7 @@ mod validator;
 #[cfg(test)]
 mod tests;
 
+pub use certificate_resolver::WosFormspecResolver;
 pub use findings::{WosFinding, WosVerificationReport};
 pub use validator::WosRecordValidator;
 

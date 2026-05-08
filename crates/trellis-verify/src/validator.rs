@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::certificate_proof::{NoopResponseProofResolver, ResponseProofResolver};
 use crate::types::{TrellisTimestamp, VerificationReport};
 
 /// Domain validation severity.
@@ -81,6 +82,15 @@ pub trait RecordValidator {
     /// Validates a verified export bundle.
     fn validate_export(&self, _export: DomainExport<'_>) -> Vec<DomainFinding> {
         Vec::new()
+    }
+
+    /// Returns the consumer-domain resolver used by Trellis Core to extract
+    /// certificate response-proof digests from opaque signing-event payload
+    /// bytes. Default returns a no-op resolver — Core never reads
+    /// consumer-domain field names directly. WOS / Formspec callers
+    /// override this to return their `WosFormspecResolver`.
+    fn response_proof_resolver(&self) -> &dyn ResponseProofResolver {
+        &NoopResponseProofResolver
     }
 }
 
