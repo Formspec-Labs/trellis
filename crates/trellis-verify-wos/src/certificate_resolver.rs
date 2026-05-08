@@ -73,9 +73,8 @@ impl ResponseProofResolver for WosFormspecResolver {
         let Ok(response_ref) = map_lookup_text(data, "formspecResponseRef") else {
             return Ok(None);
         };
-        Ok(parse_sha256_text(&response_ref).map(|response_hash| CertificateResponseProof {
-            response_hash,
-        }))
+        Ok(parse_sha256_text(&response_ref)
+            .map(|response_hash| CertificateResponseProof { response_hash }))
     }
 
     fn resolve_principal_ref(&self, payload_bytes: &[u8]) -> Option<String> {

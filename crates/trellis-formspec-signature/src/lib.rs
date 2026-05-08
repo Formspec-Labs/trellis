@@ -5,6 +5,8 @@
 //! Same registry coverage as webcrypto/ring adapters; PQC suites composable as Trellis adds them.
 //! Receipt signing uses Trellis-managed signing keys per ADR-0006 key-class taxonomy.
 
+use ed25519_dalek::ed25519::signature::Verifier as Ed25519Verifier;
+use ed25519_dalek::{Signature, VerifyingKey};
 use formspec_signature_port::{
     AdapterInfo, KeyInfo, SignatureMethodRegistry, VerificationReceipt, VerificationResult,
     Verifier, VerifierError, VerifyRequest,
@@ -47,6 +49,48 @@ impl TrellisCoseVerifier {
             receipt_bytes: None,
         }
     }
+
+    fn failed_receipt(
+        &self,
+        request: &VerifyRequest,
+        registry: &SignatureMethodRegistry,
+    ) -> VerificationReceipt {
+        VerificationReceipt {
+            result: VerificationResult::Failed,
+            method: request.signature_method.clone(),
+            method_registry_version: registry.version.clone(),
+            adapter: self.adapter_info.clone(),
+            key: KeyInfo {
+                r#ref: request.key_ref.clone(),
+                version: None,
+                snapshot: None,
+            },
+            verified_at: chrono_now(),
+            context: None,
+            receipt_bytes: None,
+        }
+    }
+
+    fn verified_receipt(
+        &self,
+        request: &VerifyRequest,
+        registry: &SignatureMethodRegistry,
+    ) -> VerificationReceipt {
+        VerificationReceipt {
+            result: VerificationResult::Verified,
+            method: request.signature_method.clone(),
+            method_registry_version: registry.version.clone(),
+            adapter: self.adapter_info.clone(),
+            key: KeyInfo {
+                r#ref: request.key_ref.clone(),
+                version: None,
+                snapshot: None,
+            },
+            verified_at: chrono_now(),
+            context: None,
+            receipt_bytes: None,
+        }
+    }
 }
 
 impl Default for TrellisCoseVerifier {
@@ -74,48 +118,53 @@ impl Verifier for TrellisCoseVerifier {
         }
 
         match entry.alg {
-            None => Ok(self.unsupported_receipt(request, registry)),
-            Some(_alg) => {
-                // TODO(Phase 4.1): integrate trellis-cose COSE_Sign1::verify() with key resolution
-                // from trellis-core's key registry.
-                //
-                // Planned implementation:
-                // let cose = trellis_cose::CoseSign1::from_bytes(&request.signature_bytes)?;
-                // let key = trellis_core::key_registry::resolve(&request.key_ref)?;
-                // let valid = trellis_cose::verify_detached(&cose, &request.signed_bytes, &key)?;
-                //
-                // Until COSE integration lands, this adapter MUST NOT be used in production
-                // builds. The `allow_placeholder_verify` feature gate makes accidental
-                // use explicit.
-
-                #[cfg(not(feature = "allow_placeholder_verify"))]
-                {
-                    let _ = _alg;
-                    return Err(VerifierError::Internal {
-                        reason: "trellis-cose COSE_Sign1 verification not yet integrated; \
-                                 enable 'allow_placeholder_verify' feature for testing only"
-                            .to_string(),
-                    });
+            Some(-8) => {
+                let key_bytes = base64::Engine::decode(
+                    &base64::engine::general_purpose::STANDARD,
+                    request.key_ref.as_str(),
+                )
+                .map_err(|error| VerifierError::Internal {
+                    reason: format!("invalid base64 Ed25519 public key: {error}"),
+                })?;
+                let key_bytes: [u8; 32] =
+                    key_bytes
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| VerifierError::Internal {
+                            reason: "Ed25519 public key must be 32 bytes".to_string(),
+                        })?;
+                let cose = formspec_signature_cose::decode_cose_sign1(&request.signature_bytes)
+                    .map_err(|error| VerifierError::InvalidCoseEncoding {
+                        reason: error.to_string(),
+                    })?;
+                if cose.alg() != entry.alg {
+                    return Ok(self.failed_receipt(request, registry));
                 }
-
-                #[cfg(feature = "allow_placeholder_verify")]
-                {
-                    Ok(VerificationReceipt {
-                        result: VerificationResult::Verified,
-                        method: request.signature_method.clone(),
-                        method_registry_version: registry.version.clone(),
-                        adapter: self.adapter_info.clone(),
-                        key: KeyInfo {
-                            r#ref: request.key_ref.clone(),
-                            version: None,
-                            snapshot: None,
-                        },
-                        verified_at: chrono_now(),
-                        context: None,
-                        receipt_bytes: None,
-                    })
+                let payload = cose
+                    .resolve_payload(&request.signed_bytes)
+                    .map_err(|error| VerifierError::InvalidCoseEncoding {
+                        reason: error.to_string(),
+                    })?;
+                let sig_structure =
+                    formspec_signature_cose::sig_structure_bytes(cose.protected_header(), payload);
+                let signature: [u8; 64] = cose.signature().try_into().map_err(|_| {
+                    VerifierError::InvalidCoseEncoding {
+                        reason: "Ed25519 COSE signature must be 64 bytes".to_string(),
+                    }
+                })?;
+                let verifying_key = VerifyingKey::from_bytes(&key_bytes).map_err(|error| {
+                    VerifierError::Internal {
+                        reason: format!("invalid Ed25519 public key: {error}"),
+                    }
+                })?;
+                let signature = Signature::from_bytes(&signature);
+                if verifying_key.verify(&sig_structure, &signature).is_ok() {
+                    Ok(self.verified_receipt(request, registry))
+                } else {
+                    Ok(self.failed_receipt(request, registry))
                 }
             }
+            Some(_) | None => Ok(self.unsupported_receipt(request, registry)),
         }
     }
 }
@@ -153,6 +202,7 @@ fn chrono_now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
     use formspec_signature_port::RegistryEntry;
 
     fn test_registry() -> SignatureMethodRegistry {
@@ -225,48 +275,59 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "allow_placeholder_verify"))]
-    fn test_known_method_returns_error_without_feature_gate() {
+    fn test_known_method_with_malformed_cose_returns_error() {
         let verifier = TrellisCoseVerifier::new();
         let registry = test_registry();
+        let key_ref = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0u8; 32]);
         let result = verifier.verify(
             &VerifyRequest {
                 signed_bytes: vec![1, 2, 3],
                 signature_bytes: vec![4, 5, 6],
                 signature_method: "urn:formspec:sig-method:ed25519-cose-sign1@1".into(),
-                key_ref: "deadbeef".into(),
+                key_ref: key_ref.into(),
             },
             &registry,
         );
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {
-            VerifierError::Internal { reason } => {
+            VerifierError::InvalidCoseEncoding { reason } => {
                 assert!(
-                    reason.contains("not yet integrated"),
-                    "expected COSE-not-integrated message, got: {reason}"
+                    reason.contains("COSE_Sign1"),
+                    "expected COSE decode message, got: {reason}"
                 );
             }
-            other => panic!("expected Internal error, got: {other}"),
+            other => panic!("expected InvalidCoseEncoding error, got: {other}"),
         }
     }
 
     #[test]
-    #[cfg(feature = "allow_placeholder_verify")]
-    fn test_known_method_returns_verified_with_feature_gate() {
+    fn test_known_method_verifies_real_cose_sign1() {
+        let signing_key = SigningKey::from_bytes(&[7u8; 32]);
+        let verifying_key = signing_key.verifying_key();
+        let signed_bytes = b"formspec signed payload".to_vec();
+        let protected = formspec_signature_cose::protected_header_bytes(-8, Some(b"trellis-kid"));
+        let sig_structure = formspec_signature_cose::sig_structure_bytes(&protected, &signed_bytes);
+        let signature = signing_key.sign(&sig_structure);
+        let signature_bytes =
+            formspec_signature_cose::encode_cose_sign1(&protected, None, &signature.to_bytes());
+        let key_ref = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            verifying_key.as_bytes(),
+        );
         let verifier = TrellisCoseVerifier::new();
         let registry = test_registry();
         let receipt = verifier
             .verify(
                 &VerifyRequest {
-                    signed_bytes: vec![1, 2, 3],
-                    signature_bytes: vec![4, 5, 6],
+                    signed_bytes,
+                    signature_bytes,
                     signature_method: "urn:formspec:sig-method:ed25519-cose-sign1@1".into(),
-                    key_ref: "deadbeef".into(),
+                    key_ref: key_ref.into(),
                 },
                 &registry,
             )
-            .expect("feature-gated placeholder returns a receipt");
+            .expect("verify");
         assert_eq!(receipt.result.to_string(), "verified");
     }
 

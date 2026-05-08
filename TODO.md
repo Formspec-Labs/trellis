@@ -109,7 +109,8 @@ are post-MVP or adopter-triggered work.
     Signature substrate boundary architecture landed 2026-05-08: 7-bundle skeleton exists,
     manifests validate, cross-stack-fixture-harness passes (9 tests incl. 3 negative).
     Remaining Trellis-side: consume bundle 007's trellis-events.cbor and trellis-export.zip
-    once byte-populated (gated on COSE adapter implementation in formspec).
+    once byte-populated (the Ed25519 COSE adapter path is landed; fixture byte generation,
+    receipt embedding, and end-to-end export vectors remain).
     Parent backlog: PLN-0067 (shared bundle), PLN-0068 (response-hash mismatch negative),
     PLN-0069 (CI/conformance gate).
 
@@ -309,22 +310,21 @@ are post-MVP or adopter-triggered work.
     `pytest -k` test reproducing export-010 parse admission; close this row.
 
 18. **TRELLIS-FORMSPEC-SIGNATURE-ADAPTER-001 — Optional Trellis-COSE adapter
-    implementing Formspec Verifier port** `[6 / 5 / 5]` (30) — **M**. Status: NOT DONE
-    (was marked Done in error).
+    implementing Formspec Verifier port** `[6 / 5 / 5]` (30) — **M**. Status: PARTIAL
     Phase 4 of substrate boundary plan: create `trellis/crates/trellis-formspec-signature/`.
     Spec-level deliverables landed: companion spec at
     trellis/specs/companion/formspec-signature-corroboration.md defining
     UCA→Formspec binding contract; ADR 0010 + 0007 cross-references for
     VerificationReceipt embedding in certificates.
-    Remaining: create crate with Cargo.toml depending on trellis-cose + formspec-signature-port;
-    implement Verifier trait (verify COSE_Sign1 bytes against signed payload using
-    trellis-cose primitives); same registry coverage as webcrypto/ring;
-    PQC suites composable as Trellis adds them; receipt signing using
-    Trellis-managed signing keys; cross-adapter byte-equivalence test
+    Implementation landed: `trellis/crates/trellis-formspec-signature` implements the
+    Formspec Verifier port and verifies Ed25519 COSE_Sign1 bytes against detached signed payload
+    bytes using the shared Formspec COSE helper crate plus Trellis-side key semantics.
+    Remaining: PQC suites as Trellis adds them; receipt signing using Trellis-managed signing
+    keys; cross-adapter byte-equivalence test
     (same signature verified by webcrypto AND Trellis adapter produces identical receipts
     modulo adapter id field); Python mirror at trellis/trellis-py/src/trellis_py/formspec_signature.py.
 
-19. **TRELLIS-CERTIFICATE-RECEIPT-EMBEDDING-001 — Embed VerificationReceipt
+ 19. **TRELLIS-CERTIFICATE-RECEIPT-EMBEDDING-001 — Embed VerificationReceipt
     in certificates of completion** `[5 / 4 / 4]` (20) — **S**.
     Per Trellis ADR 0007 (as amended 2026-05-08 by ADR-0090): certificate-of-completion
     embeds VerificationReceipt for each signature in the certificate's signature-event
@@ -336,6 +336,25 @@ are post-MVP or adopter-triggered work.
     receipt-bearing certificates.
     Gate: TRELLIS-FORMSPEC-SIGNATURE-ADAPTER-001 must land first (receipt bytes
     must be producible before they can be embedded).
+
+ 20. **TRELLIS-003 residue — `prev_hash` write guard at append time** — **XS**.
+    DDIA remediation landed sequence-continuity validation + `SequenceGap` error
+    in both stores (`store-postgres:371-397`, `store-memory:129-140`) plus
+    `canonical_event_hash BYTEA NULL` migration v3. The `prev_hash` comparison
+    between incoming event and predecessor's stored hash is explicitly deferred:
+    `store-postgres/src/lib.rs:391` carries `TODO(TRELLIS-003)`. `StoredEvent`
+    does not yet carry a `prev_hash` field; `trellis-verify` performs full
+    `prev_hash` chain verification at read time (`trellis-verify/src/lib.rs:647-670`
+    + `VerificationFailureKind::PrevHashMismatch`), so the integrity guarantee
+    holds — the gap is defense-in-depth at the write path. Land when `StoredEvent`
+    gains `prev_hash` and the append path can compare it against the predecessor's
+    `canonical_event_hash` without a schema-breaking migration.
+    + [ ] Add `prev_hash: Option<[u8; 32]>` to `StoredEvent` (backward-compatible).
+    + [ ] Compare incoming `prev_hash` against predecessor's `canonical_event_hash`
+      in `append_event_in_tx` (both stores); emit `PrevHashMismatch`.
+    + [ ] Migration v4 adds `prev_hash BYTEA NULL`.
+    + [ ] Vectors: append with correct `prev_hash`, append with wrong `prev_hash`
+      → `PrevHashMismatch`, append with no `prev_hash` → skip (backward-compat).
 
 ---
 

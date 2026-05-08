@@ -558,6 +558,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "formspec-signature-cose"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+]
+
+[[package]]
 name = "formspec-signature-port"
 version = "0.1.0"
 dependencies = [
@@ -1971,6 +1978,8 @@ name = "trellis-formspec-signature"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "ed25519-dalek",
+ "formspec-signature-cose",
  "formspec-signature-port",
  "trellis-core",
  "trellis-cose",
