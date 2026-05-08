@@ -8,7 +8,7 @@ import zipfile
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, NamedTuple, Optional, Protocol
 
 import cbor2
 from cbor2 import CBORDecodeError, CBORTag
@@ -277,6 +277,64 @@ class VerifyError(Exception):
     def __init__(self, message: str, kind: Optional[str] = None) -> None:
         super().__init__(message)
         self.kind: Optional[str] = kind
+
+
+class CertificateResponseProof(NamedTuple):
+    """Neutral certificate response-proof shape consumed by the core
+    verifier. Mirror of Rust ``trellis_verify::certificate_proof::CertificateResponseProof``.
+
+    Trellis Core MUST NOT inspect WOS, Formspec, or any other consumer-domain
+    field names. It calls ``ResponseProofResolver.resolve`` against opaque
+    payload bytes and either receives a ``CertificateResponseProof`` (the
+    consumer-domain resolver knew how to read this payload), ``None`` (this
+    payload is not a signing-event the resolver can interpret), or raises
+    ``MalformedResponseDigestError`` (the payload claimed to carry a response
+    proof but the proof is malformed — fail closed at the caller).
+    """
+
+    response_hash: bytes  # 32 bytes
+
+
+class ResolverError(Exception):
+    """Base class for resolver-side errors surfaced to Trellis Core."""
+
+
+class MalformedResponseDigestError(ResolverError):
+    """The payload claimed to carry a response proof but the proof is
+    malformed. Phase M defines the surface; Phase N flips the
+    ``WosFormspecResolver`` malformed-digest path from silent-skip to
+    raising this error."""
+
+
+class ResponseProofResolver(Protocol):
+    """Consumer-domain resolver that reads opaque signing-event payload
+    bytes and returns a ``CertificateResponseProof`` when the resolver
+    recognizes the payload as a signing event with an embedded response
+    proof. Mirror of Rust ``trellis_verify::certificate_proof::ResponseProofResolver``.
+
+    Returns a ``CertificateResponseProof`` if this resolver can interpret
+    the payload, ``None`` if not. Raises ``MalformedResponseDigestError``
+    if the payload claimed to carry a proof but the proof is malformed —
+    callers fail closed.
+    """
+
+    def resolve(self, payload_bytes: bytes) -> Optional[CertificateResponseProof]: ...
+
+    def resolve_principal_ref(self, payload_bytes: bytes) -> Optional[str]: ...
+
+
+class _NoopResponseProofResolver:
+    """No-op resolver used by Trellis Core's default verification paths.
+    Always returns ``None`` — every payload is treated as
+    "not-recognizable", which preserves the prior ``continue`` behavior
+    on Core-only verification paths (no consumer-domain field reading).
+    """
+
+    def resolve(self, payload_bytes: bytes) -> Optional[CertificateResponseProof]:
+        return None
+
+    def resolve_principal_ref(self, payload_bytes: bytes) -> Optional[str]:
+        return None
 
 
 @dataclass
@@ -643,7 +701,11 @@ def _parse_sha256_prefix_text(value: str) -> bytes:
     if not value.startswith("sha256:"):
         raise VerifyError("hash text must use sha256: prefix")
     hx = value[len("sha256:") :]
-    raw = _hex_decode(hx)
+    return _parse_sha256_hex(hx)
+
+
+def _parse_sha256_hex(value: str) -> bytes:
+    raw = _hex_decode(value)
     if len(raw) != 32:
         raise VerifyError("sha256 hash text must be 32 bytes")
     return raw
@@ -1749,6 +1811,7 @@ def _finalize_certificates_of_completion(
     events: list[ParsedSign1],
     event_failures: list[VerificationFailure],
     payload_blobs: Optional[dict[bytes, bytes]] = None,
+    resolver: Optional[ResponseProofResolver] = None,
 ) -> list[CertificateOfCompletionOutcome]:
     """ADR 0007 §"Verifier obligations" cross-event finalization. Step 1
     runs in `_decode_certificate_payload`; this pass runs steps 2 (id
@@ -1768,6 +1831,9 @@ def _finalize_certificates_of_completion(
     path)."""
     if not payloads:
         return []
+
+    if resolver is None:
+        resolver = _NoopResponseProofResolver()
 
     # Build canonical_event_hash → EventDetails lookup once for steps 5/6/7.
     event_by_hash: dict[bytes, EventDetails] = {}
@@ -1854,6 +1920,10 @@ def _finalize_certificates_of_completion(
                 )
 
         # Step 7 — response_ref equivalence when non-null.
+        # Trellis Core does NOT inspect WOS/Formspec field names. The
+        # resolver (`WosFormspecResolver` in `verify_wos.py`) is the only
+        # code path allowed to read consumer-domain field names; Core only
+        # compares the returned hash against `response_ref`.
         if payload.chain_summary.response_ref is not None:
             response_ref = payload.chain_summary.response_ref
             had_resolvable_response = False
@@ -1866,17 +1936,17 @@ def _finalize_certificates_of_completion(
                 if affirmation is None:
                     continue
                 try:
-                    record = _parse_signature_affirmation_record(affirmation)
-                except VerifyError:
+                    proof = resolver.resolve(affirmation)
+                except MalformedResponseDigestError:
+                    # Phase M leaves this as `continue` to preserve current
+                    # behavior. Phase N flips this to a fail-closed
+                    # `response_ref_mismatch` (or a more-specific tamper
+                    # kind on the resolver-implementation side).
                     continue
-                try:
-                    record_hash = _parse_sha256_prefix_text(record["formspec_response_ref"])
-                except VerifyError:
-                    # Source SignatureAffirmation carries a non-sha256 value
-                    # (e.g. URL); skip — Phase-1 admits that shape.
+                if proof is None:
                     continue
                 had_resolvable_response = True
-                if record_hash == response_ref:
+                if proof.response_hash == response_ref:
                     matched = True
                     break
             if had_resolvable_response and not matched:
@@ -1887,6 +1957,9 @@ def _finalize_certificates_of_completion(
                 )
 
         # Step 2 first sub-clause (per-index principal_ref equivalence).
+        # Resolver returns the consumer-domain principal-ref string when it
+        # recognizes the payload; Core only compares against
+        # `display.principal_ref`.
         for i, signing_event_hash in enumerate(payload.signing_events):
             target = event_by_hash.get(signing_event_hash)
             if target is None:
@@ -1894,12 +1967,11 @@ def _finalize_certificates_of_completion(
             affirmation = _affirmation_payload_bytes(target, payload_blobs)
             if affirmation is None:
                 continue
-            try:
-                record = _parse_signature_affirmation_record(affirmation)
-            except VerifyError:
+            principal_ref = resolver.resolve_principal_ref(affirmation)
+            if principal_ref is None:
                 continue
             display = payload.chain_summary.signer_display[i]
-            if display.principal_ref != record["signer_id"]:
+            if display.principal_ref != principal_ref:
                 outcome.chain_summary_consistent = False
                 outcome.failures.append("certificate_chain_summary_mismatch")
                 event_failures.append(
@@ -2302,6 +2374,7 @@ def _verify_event_set(
     payload_blobs: Optional[dict[bytes, bytes]],
     non_signing_registry: Optional[dict[bytes, NonSigningKeyEntry]] = None,
     identity_event_type_admitted: Callable[[str], bool] = _is_identity_attestation_event_type,
+    resolver: Optional[ResponseProofResolver] = None,
 ) -> VerificationReport:
     event_failures: list[VerificationFailure] = []
     posture_transitions: list[PostureTransitionOutcome] = []
@@ -2579,6 +2652,7 @@ def _verify_event_set(
         events,
         event_failures,
         payload_blobs,
+        resolver=resolver,
     )
     # ADR 0010 §"Verifier obligations" finalization — runs steps 3-9
     # cross-event after every event has been decoded.
@@ -3665,6 +3739,13 @@ def _map_lookup_optional_text(m: dict, key: str) -> Optional[str]:
     raise VerifyError(f"`{key}` is neither text nor null")
 
 
+def _map_lookup_str_alias(m: dict, key: str, legacy_key: str) -> str:
+    try:
+        return str(_map_lookup_str(m, key))
+    except VerifyError:
+        return str(_map_lookup_str(m, legacy_key))
+
+
 def _parse_intake_handoff_details(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise VerifyError("handoff is not a map")
@@ -3723,31 +3804,6 @@ def _parse_intake_accepted_record(payload_bytes: bytes) -> dict[str, Any]:
         "case_ref": case_ref,
         "definition_url": _map_lookup_optional_text(data, "definitionUrl"),
         "definition_version": _map_lookup_optional_text(data, "definitionVersion"),
-    }
-
-
-def _parse_case_created_record(payload_bytes: bytes) -> dict[str, Any]:
-    v = _decode_value(payload_bytes)
-    if not isinstance(v, dict):
-        raise VerifyError("case created payload root is not a map")
-    record_kind = str(_map_lookup_str(v, "recordKind"))
-    if record_kind != "caseCreated":
-        raise VerifyError("case created payload recordKind is not caseCreated")
-    data = _map_lookup_map(v, "data")
-    case_ref = str(_map_lookup_str(data, "caseRef"))
-    outputs = _map_lookup_array(v, "outputs")
-    output_case_ref = _first_array_text(outputs)
-    if output_case_ref is None:
-        raise VerifyError("case created outputs array is missing or empty")
-    if output_case_ref != case_ref:
-        raise VerifyError("case created outputs[0] does not match data.caseRef")
-    return {
-        "case_ref": case_ref,
-        "intake_handoff_ref": str(_map_lookup_str(data, "intakeHandoffRef")),
-        "formspec_response_ref": str(_map_lookup_str(data, "formspecResponseRef")),
-        "validation_report_ref": str(_map_lookup_str(data, "validationReportRef")),
-        "ledger_head_ref": str(_map_lookup_str(data, "ledgerHeadRef")),
-        "initiation_mode": str(_map_lookup_str(data, "initiationMode")),
     }
 
 
@@ -4057,42 +4113,23 @@ def _parse_signature_catalog_entries(data: bytes) -> list[dict[str, Any]]:
                 "consent_reference": cr,
                 "signature_provider": str(_map_lookup_str(entry, "signature_provider")),
                 "ceremony_id": str(_map_lookup_str(entry, "ceremony_id")),
+                "source_signature_system": str(
+                    _map_lookup_str(entry, "source_signature_system")
+                ),
+                "source_signature_id": str(_map_lookup_str(entry, "source_signature_id")),
+                "signed_payload_digest": str(_map_lookup_str(entry, "signed_payload_digest")),
+                "signed_payload_digest_algorithm": str(
+                    _map_lookup_str(entry, "signed_payload_digest_algorithm")
+                ),
+                "signing_intent": str(_map_lookup_str(entry, "signing_intent")),
                 "profile_ref": str(pr) if isinstance(pr, str) else None,
                 "profile_key": str(pk) if isinstance(pk, str) else None,
-                "formspec_response_ref": str(_map_lookup_str(entry, "formspec_response_ref")),
+                "source_response_ref": _map_lookup_str_alias(
+                    entry, "source_response_ref", "formspec_response_ref"
+                ),
             }
         )
     return rows
-
-
-def _parse_signature_affirmation_record(payload_bytes: bytes) -> dict[str, Any]:
-    v = _decode_value(payload_bytes)
-    if not isinstance(v, dict):
-        raise VerifyError("signature affirmation payload root is not a map")
-    rk = str(_map_lookup_str(v, "recordKind"))
-    if rk != "signatureAffirmation":
-        raise VerifyError("recordKind is not signatureAffirmation")
-    data = _map_lookup_map(v, "data")
-    pr = data.get("profileRef")
-    pk = data.get("profileKey")
-    ib = _map_lookup_map(data, "identityBinding")
-    cr = _map_lookup_map(data, "consentReference")
-    return {
-        "signer_id": str(_map_lookup_str(data, "signerId")),
-        "role_id": str(_map_lookup_str(data, "roleId")),
-        "role": str(_map_lookup_str(data, "role")),
-        "document_id": str(_map_lookup_str(data, "documentId")),
-        "document_hash": str(_map_lookup_str(data, "documentHash")),
-        "document_hash_algorithm": str(_map_lookup_str(data, "documentHashAlgorithm")),
-        "signed_at": str(_map_lookup_str(data, "signedAt")),
-        "identity_binding": ib,
-        "consent_reference": cr,
-        "signature_provider": str(_map_lookup_str(data, "signatureProvider")),
-        "ceremony_id": str(_map_lookup_str(data, "ceremonyId")),
-        "profile_ref": str(pr) if isinstance(pr, str) else None,
-        "profile_key": str(pk) if isinstance(pk, str) else None,
-        "formspec_response_ref": str(_map_lookup_str(data, "formspecResponseRef")),
-    }
 
 
 def _signature_entry_matches_record(entry: dict[str, Any], record: dict[str, Any]) -> bool:
@@ -4118,11 +4155,21 @@ def _signature_entry_matches_record(entry: dict[str, Any], record: dict[str, Any
         return False
     if entry["ceremony_id"] != record["ceremony_id"]:
         return False
+    if entry["source_signature_system"] != record["source_signature_system"]:
+        return False
+    if entry["source_signature_id"] != record["source_signature_id"]:
+        return False
+    if entry["signed_payload_digest"] != record["signed_payload_digest"]:
+        return False
+    if entry["signed_payload_digest_algorithm"] != record["signed_payload_digest_algorithm"]:
+        return False
+    if entry["signing_intent"] != record["signing_intent"]:
+        return False
     if entry["profile_ref"] != record["profile_ref"]:
         return False
     if entry["profile_key"] != record["profile_key"]:
         return False
-    if entry["formspec_response_ref"] != record["formspec_response_ref"]:
+    if entry["source_response_ref"] != record["source_response_ref"]:
         return False
     return True
 
@@ -4322,6 +4369,7 @@ def _verify_interop_sidecars(
 def verify_export_zip(
     export_zip: bytes,
     identity_event_type_admitted: Callable[[str], bool] = _is_identity_attestation_event_type,
+    resolver: Optional[ResponseProofResolver] = None,
 ) -> VerificationReport:
     try:
         archive = parse_export_zip(export_zip)
@@ -4506,6 +4554,7 @@ def verify_export_zip(
         payload_blobs,
         non_signing_registry=non_signing_registry,
         identity_event_type_admitted=identity_event_type_admitted,
+        resolver=resolver,
     )
     # ADR 0008 / Core §18.3a — Wave 25 dispatched-verifier outcomes.
     # `_verify_interop_sidecars` already short-circuited any fatal
@@ -4842,6 +4891,7 @@ def verify_tampered_ledger(
     initial_posture_declaration: Optional[bytes] = None,
     posture_declaration: Optional[bytes] = None,
     identity_event_type_admitted: Callable[[str], bool] = _is_identity_attestation_event_type,
+    resolver: Optional[ResponseProofResolver] = None,
 ) -> VerificationReport:
     try:
         registry, non_signing_registry = _parse_key_registry(signing_key_registry)
@@ -4869,6 +4919,7 @@ def verify_tampered_ledger(
         None,
         non_signing_registry=non_signing_registry,
         identity_event_type_admitted=identity_event_type_admitted,
+        resolver=resolver,
     )
 
 
@@ -4876,6 +4927,7 @@ def verify_single_event(
     public_key_bytes: bytes,
     signed_event: bytes,
     identity_event_type_admitted: Callable[[str], bool] = _is_identity_attestation_event_type,
+    resolver: Optional[ResponseProofResolver] = None,
 ) -> VerificationReport:
     try:
         parsed = _parse_sign1_bytes(signed_event)
@@ -4891,4 +4943,5 @@ def verify_single_event(
         None,
         None,
         identity_event_type_admitted=identity_event_type_admitted,
+        resolver=resolver,
     )

@@ -55,6 +55,7 @@ def verify_export_zip(export_zip: bytes) -> WosVerificationReport:
     trellis = core.verify_export_zip(
         export_zip,
         identity_event_type_admitted=_is_wos_identity_attestation_event_type,
+        resolver=WosFormspecResolver(),
     )
     if not trellis.structure_verified:
         return WosVerificationReport(trellis)
@@ -84,6 +85,7 @@ def verify_tampered_ledger(
         initial_posture_declaration,
         posture_declaration,
         identity_event_type_admitted=_is_wos_identity_attestation_event_type,
+        resolver=WosFormspecResolver(),
     )
     if not trellis.structure_verified:
         return WosVerificationReport(trellis)
@@ -305,7 +307,7 @@ def _validate_signature_catalog(
             )
             continue
         try:
-            record = core._parse_signature_affirmation_record(payload)
+            record = _parse_signature_affirmation_record(payload)
         except core.VerifyError as exc:
             findings.append(
                 _failure("signature_affirmation_payload_invalid", h, f"{core._hex(h)}/{exc}")
@@ -410,7 +412,7 @@ def _validate_intake_entry(
         findings.append(_failure("case_created_payload_unreadable", case_created_hash, core._hex(case_created_hash)))
         return findings
     try:
-        case_record = core._parse_case_created_record(case_payload)
+        case_record = _parse_case_created_record(case_payload)
     except core.VerifyError as exc:
         findings.append(_failure("case_created_payload_invalid", case_created_hash, f"{core._hex(case_created_hash)}/{exc}"))
         return findings
@@ -518,3 +520,141 @@ def _validate_clock_segments(
             active.pop(clock_id, None)
             paused.pop(clock_id, None)
     return findings
+
+
+# ---------------------------------------------------------------
+# WOS/Formspec implementation of the Trellis Core
+# `ResponseProofResolver` Protocol. Reads consumer-domain field
+# names (`data.signedPayloadDigest`, `data.signedPayloadDigestAlgorithm`,
+# legacy `data.formspecResponseRef`, `data.signerId`) out of opaque
+# payload bytes and returns a neutral `CertificateResponseProof` (or
+# principal-ref string) to Trellis Core, or `None` if the payload is
+# not a signing-event payload this resolver knows how to interpret.
+#
+# Mirror of Rust `trellis_verify_wos::WosFormspecResolver`. Phase M
+# leaves malformed-digest as silent-skip; Phase N flips it to
+# `MalformedResponseDigestError`.
+# ---------------------------------------------------------------
+
+
+class WosFormspecResolver:
+    """WOS/Formspec consumer-domain implementation of the Core
+    `ResponseProofResolver` Protocol. Stateless; instantiate per-call.
+    """
+
+    def resolve(
+        self, payload_bytes: bytes
+    ) -> Optional[core.CertificateResponseProof]:
+        try:
+            record = _parse_signature_affirmation_record(payload_bytes)
+        except core.VerifyError:
+            return None
+        try:
+            digest = _signature_affirmation_response_digest(record)
+        except core.VerifyError:
+            # Phase M posture: source SignatureAffirmation carries no
+            # sha-256 signed payload digest or legacy response digest;
+            # silent-skip so Phase-1 admits signing-only shapes.
+            # Phase N replaces this with
+            # `raise core.MalformedResponseDigestError(...)`.
+            return None
+        return core.CertificateResponseProof(response_hash=digest)
+
+    def resolve_principal_ref(self, payload_bytes: bytes) -> Optional[str]:
+        try:
+            record = _parse_signature_affirmation_record(payload_bytes)
+        except core.VerifyError:
+            return None
+        signer_id = record.get("signer_id")
+        if isinstance(signer_id, str):
+            return signer_id
+        return None
+
+
+def _parse_signature_affirmation_record(payload_bytes: bytes) -> dict[str, Any]:
+    """Reads WOS-domain SignatureAffirmation record fields from an
+    opaque payload. Moved here from `verify.py` per the Trellis Core
+    dependency-inversion boundary: Core MUST NOT inspect WOS field
+    names directly (ADR 0004).
+    """
+    v = core._decode_value(payload_bytes)
+    if not isinstance(v, dict):
+        raise core.VerifyError("signature affirmation payload root is not a map")
+    rk = str(core._map_lookup_str(v, "recordKind"))
+    if rk != "signatureAffirmation":
+        raise core.VerifyError("recordKind is not signatureAffirmation")
+    data = core._map_lookup_map(v, "data")
+    pr = data.get("profileRef")
+    pk = data.get("profileKey")
+    ib = core._map_lookup_map(data, "identityBinding")
+    cr = core._map_lookup_map(data, "consentReference")
+    return {
+        "signer_id": str(core._map_lookup_str(data, "signerId")),
+        "role_id": str(core._map_lookup_str(data, "roleId")),
+        "role": str(core._map_lookup_str(data, "role")),
+        "document_id": str(core._map_lookup_str(data, "documentId")),
+        "document_hash": str(core._map_lookup_str(data, "documentHash")),
+        "document_hash_algorithm": str(
+            core._map_lookup_str(data, "documentHashAlgorithm")
+        ),
+        "signed_at": str(core._map_lookup_str(data, "signedAt")),
+        "identity_binding": ib,
+        "consent_reference": cr,
+        "signature_provider": str(core._map_lookup_str(data, "signatureProvider")),
+        "ceremony_id": str(core._map_lookup_str(data, "ceremonyId")),
+        "source_signature_system": str(
+            core._map_lookup_str(data, "sourceSignatureSystem")
+        ),
+        "source_signature_id": str(core._map_lookup_str(data, "sourceSignatureId")),
+        "signed_payload_digest": str(core._map_lookup_str(data, "signedPayloadDigest")),
+        "signed_payload_digest_algorithm": str(
+            core._map_lookup_str(data, "signedPayloadDigestAlgorithm")
+        ),
+        "signing_intent": str(core._map_lookup_str(data, "signingIntent")),
+        "profile_ref": str(pr) if isinstance(pr, str) else None,
+        "profile_key": str(pk) if isinstance(pk, str) else None,
+        "source_response_ref": core._map_lookup_str_alias(
+            data, "sourceResponseRef", "formspecResponseRef"
+        ),
+    }
+
+
+def _signature_affirmation_response_digest(record: dict[str, Any]) -> bytes:
+    """Returns the response digest bytes referenced by a
+    SignatureAffirmation record. Reads `signedPayloadDigest` (preferred)
+    or legacy `formspecResponseRef`/`sourceResponseRef`."""
+    if record.get("signed_payload_digest_algorithm") == "sha-256":
+        return core._parse_sha256_hex(str(record["signed_payload_digest"]))
+    legacy = record.get("source_response_ref")
+    if isinstance(legacy, str):
+        return core._parse_sha256_prefix_text(legacy)
+    raise core.VerifyError("signature affirmation has no sha-256 response digest")
+
+
+def _parse_case_created_record(payload_bytes: bytes) -> dict[str, Any]:
+    """Reads WOS-domain caseCreated record fields from an opaque
+    payload. Moved here from `verify.py` per the Trellis Core
+    dependency-inversion boundary (ADR 0004): Core MUST NOT inspect
+    WOS field names directly."""
+    v = core._decode_value(payload_bytes)
+    if not isinstance(v, dict):
+        raise core.VerifyError("case created payload root is not a map")
+    record_kind = str(core._map_lookup_str(v, "recordKind"))
+    if record_kind != "caseCreated":
+        raise core.VerifyError("case created payload recordKind is not caseCreated")
+    data = core._map_lookup_map(v, "data")
+    case_ref = str(core._map_lookup_str(data, "caseRef"))
+    outputs = core._map_lookup_array(v, "outputs")
+    output_case_ref = core._first_array_text(outputs)
+    if output_case_ref is None:
+        raise core.VerifyError("case created outputs array is missing or empty")
+    if output_case_ref != case_ref:
+        raise core.VerifyError("case created outputs[0] does not match data.caseRef")
+    return {
+        "case_ref": case_ref,
+        "intake_handoff_ref": str(core._map_lookup_str(data, "intakeHandoffRef")),
+        "formspec_response_ref": str(core._map_lookup_str(data, "formspecResponseRef")),
+        "validation_report_ref": str(core._map_lookup_str(data, "validationReportRef")),
+        "ledger_head_ref": str(core._map_lookup_str(data, "ledgerHeadRef")),
+        "initiation_mode": str(core._map_lookup_str(data, "initiationMode")),
+    }

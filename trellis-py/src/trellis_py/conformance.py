@@ -44,6 +44,7 @@ WOS_TAMPER_KINDS = {
     "missing_intake_handoff_catalog",
     "missing_signature_catalog",
     "rescission_terminality_violation",
+    "response_ref_mismatch",
     "signature_affirmation_payload_invalid",
     "signature_affirmation_payload_unreadable",
     "signature_catalog_digest_mismatch",
@@ -196,12 +197,22 @@ def _assert_wos_report(
     assert report.trellis.structure_verified == expected_report["structure_verified"]
     assert report.integrity_verified == expected_report["integrity_verified"]
     assert report.trellis.readability_verified == expected_report["readability_verified"]
+    # First check `wos_findings` (DomainFinding emitted from WOS validators);
+    # fall back to Trellis-Core `event_failures` when the kind is a
+    # Core-emitted failure routed through the WOS path because the
+    # resolution required a WOS resolver (e.g. `response_ref_mismatch`).
     ff = _first_wos_failure(report)
-    assert ff is not None
-    assert ff.kind == expected_kind
+    if ff is not None:
+        assert ff.kind == expected_kind
+        if "failing_event_id" in expected_report:
+            assert ff.event_hash is not None
+            assert ff.event_hash.hex() == expected_report["failing_event_id"]
+        return
+    trellis_failure = _first_failure(report.trellis)
+    assert trellis_failure is not None
+    assert trellis_failure.kind == expected_kind
     if "failing_event_id" in expected_report:
-        assert ff.event_hash is not None
-        assert ff.event_hash.hex() == expected_report["failing_event_id"]
+        assert trellis_failure.location == expected_report["failing_event_id"]
 
 
 def _assert_tamper(root: Path, manifest: dict[str, Any]) -> None:
