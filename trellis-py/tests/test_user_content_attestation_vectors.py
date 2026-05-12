@@ -35,15 +35,20 @@ def test_uca_tamper_vectors_match_manifest(vector_dir: Path) -> None:
 
 
 def test_core_identity_attestation_event_type_is_fixture_only() -> None:
-    assert not _is_identity_attestation_event_type("wos.identity.identityAttestation")
+    assert not _is_identity_attestation_event_type(
+        "wos.assurance.identity_attestation"
+    )
     assert _is_identity_attestation_event_type("x-trellis-test/identity-attestation/v1")
-    assert not _is_identity_attestation_event_type("wos.identity.authenticationMethod")
+    assert not _is_identity_attestation_event_type("wos.identity.authentication_method")
 
 
 def test_wos_identity_attestation_event_type_is_adapter_owned() -> None:
     assert verify_wos._is_wos_identity_attestation_event_type(  # noqa: SLF001
-        "wos.identity.identityAttestation"
+        "wos.assurance.identity_attestation"
     )
     assert not verify_wos._is_wos_identity_attestation_event_type(  # noqa: SLF001
-        "wos.identity.authenticationMethod"
+        "wos.identity.identity_attestation"
+    )
+    assert not verify_wos._is_wos_identity_attestation_event_type(  # noqa: SLF001
+        "wos.identity.authentication_method"
     )
