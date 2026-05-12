@@ -124,8 +124,8 @@ are post-MVP or adopter-triggered work.
     Parent **PLN-0381** is closed by ADR 0068 D-3.1: the
     `IdentityAttestation` Facts-tier record shape is now normative, and
     **PLN-0310** remains closed by supersession. Remaining Trellis-side action:
-    use the canonical `wos.identity.identityAttestation` identity-attestation
-    event type under the WOS `wos.<layer>.<recordKind>` taxonomy, replace the
+    use the canonical `wos.assurance.identity_attestation` identity-attestation
+    event type under the WOS `wos.<layer>.<record_kind>` taxonomy, replace the
     current `x-trellis-test/identity-attestation/v1`
     fixture-only allowance where appropriate, and declare how provider-neutral
     identity-proofing attestations travel in export bundles. Composes with
@@ -133,7 +133,7 @@ are post-MVP or adopter-triggered work.
     method). Cross-stack fixtures (Formspec → WOS provenance → Trellis
     envelope) prove composition.
     *Progress 2026-05-08:* Core §23.4 plus Rust/Python WOS-composed verifiers
-    now admit `wos.identity.identityAttestation` for ADR 0010 identity
+    now admit `wos.assurance.identity_attestation` for ADR 0010 identity
     resolution through the consumer-owned validation seam while Trellis center
     retains only the `x-trellis-test/*` fixture identifier. Remaining work still
     waits on PLN-0384 shared taxonomy / fixture ratification before replacing
@@ -202,7 +202,7 @@ are post-MVP or adopter-triggered work.
  8. **External recipient lifecycle — Trellis-side ingestion** — **M**.
     *Land after parent ratifies the stack ADR per **PLN-0382**.* Privacy
     Profile registers external systems as per-class recipients; ledgered
-    `wos.governance.access-granted` / `access-revoked` events flow through
+    `wos.governance.access_granted` / `access_revoked` events flow through
     `custodyHook`; recipient-rotation rule is per-event scope (past events
     keep existing key_bag immutably; future events scope to current
     recipients). Trellis-side: ingest the new event types; clarify Companion

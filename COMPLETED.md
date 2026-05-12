@@ -20,8 +20,8 @@ cross-commit wave context that a raw log cannot reconstruct.
 
 ### Wave 50 (2026-05-08) — identity-attestation event-type admission
 
-- Registered `wos.identity.identityAttestation` as the canonical WOS
-  identity-attestation event type under the `wos.<layer>.<recordKind>`
+- Registered `wos.assurance.identity_attestation` as the canonical WOS
+  identity-attestation event type under the `wos.<layer>.<record_kind>`
   taxonomy for ADR 0068 D-3.1 records.
 - Updated Rust and Python WOS-composed verifier admission so ADR 0010
   `identity_attestation_ref` resolution accepts the canonical WOS event type
@@ -950,9 +950,9 @@ limit mid-train; pickup audit caught both):
 
 Residue: TR-CORE-157 (idempotency-collision + operator-as-attestor)
 follow-on tampers if a corpus gap surfaces. Rotation-grace `Rotating`
-admission is now closed by Wave 30. PLN-0381 ratification adds canonical
-`wos.identity.*` branch in a single edit to
-`is_identity_attestation_event_type`. Open finding flagged but out-of-scope:
+admission is now closed by Wave 30. PLN-0381 ratification adds the canonical
+F-13 WOS identity-attestation branch through the WOS-composed validator;
+Trellis Core keeps only its fixture identifier. Open finding flagged but out-of-scope:
 `is_operator_uri` hardcodes `urn:{trellis,wos}:operator:` prefixes — works
 today, would land properly via a Companion §6.4 amendment naming the
 convention.

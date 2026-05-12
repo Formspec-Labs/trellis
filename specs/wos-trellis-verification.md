@@ -34,12 +34,14 @@ The WOS validator owns the following event-type literals:
 
 | Literal | Meaning |
 |---|---|
-| `wos.kernel.signatureAffirmation` | Signature provenance event. |
-| `wos.kernel.intakeAccepted` | Intake-acceptance provenance event. |
-| `wos.kernel.caseCreated` | Governed-case creation provenance event. |
-| `wos.governance.determinationRescinded` | Rescission closes the current determination chain. |
+| `wos.kernel.signature_affirmation` | Signature provenance event. |
+| `wos.kernel.intake_accepted` | Intake-acceptance provenance event. |
+| `wos.kernel.case_created` | Governed-case creation provenance event. |
+| `wos.governance.determination_rescinded` | Rescission closes the current determination chain. |
 | `wos.governance.reinstated` | Reinstatement reopens the current determination chain. |
 | `wos.governance.determination*` | Determination-family event prefix for rescission terminality. |
+| `wos.governance.clock_started` | Statutory-clock start/resume provenance event. |
+| `wos.governance.clock_resolved` | Statutory-clock resolution provenance event. |
 
 These literals MUST NOT be required by a Trellis Core verifier.
 
@@ -48,15 +50,15 @@ These literals MUST NOT be required by a Trellis Core verifier.
 | ID | Requirement |
 |---|---|
 | WOS-TV-001 | The WOS validator MUST report its findings separately from the Core `VerificationReport` or mark composed findings so callers can distinguish WOS-domain failures from Core integrity failures. |
-| WOS-TV-002 | After a chain carries `wos.governance.determinationRescinded`, the WOS validator MUST report `rescission_terminality_violation` for any later same-chain `wos.governance.determination*` event unless an intervening `wos.governance.reinstated` event reopens the chain. |
-| WOS-TV-003 | When a `clockResolved` record has `resolution = "paused"`, the next resumed `clockStarted` segment for the same `clockId` MUST carry the same `calendarRef` as the paused segment. A mismatch is `clock_calendar_mismatch`. |
+| WOS-TV-002 | After a chain carries `wos.governance.determination_rescinded`, the WOS validator MUST report `rescission_terminality_violation` for any later same-chain `wos.governance.determination*` event unless an intervening `wos.governance.reinstated` event reopens the chain. |
+| WOS-TV-003 | When a `wos.governance.clock_resolved` event carries a `clockResolved` record with `resolution = "paused"`, the next resumed `wos.governance.clock_started` segment for the same `clockId` MUST carry the same `calendarRef` as the paused segment. A mismatch is `clock_calendar_mismatch`. |
 | WOS-TV-004 | If `trellis.export.signature-affirmations.v1` is present, `062-signature-affirmations.cbor` MUST be present and its SHA-256 digest MUST equal `signature_catalog_digest`. |
-| WOS-TV-005 | Each signature catalog row MUST resolve `canonical_event_hash` to exactly one exported `wos.kernel.signatureAffirmation` event and MUST field-match the decoded WOS `SignatureAffirmation` record for every catalogued field. Nested CBOR maps such as identity binding and consent reference compare semantically under RFC 8949 canonical map ordering, not by source map-entry order. |
+| WOS-TV-005 | Each signature catalog row MUST resolve `canonical_event_hash` to exactly one exported `wos.kernel.signature_affirmation` event and MUST field-match the decoded WOS `SignatureAffirmation` record for every catalogued field. Nested CBOR maps such as identity binding and consent reference compare semantically under RFC 8949 canonical map ordering, not by source map-entry order. |
 | WOS-TV-006 | Signature catalog rows MUST NOT duplicate `canonical_event_hash`. |
 | WOS-TV-007 | If `trellis.export.intake-handoffs.v1` is present, `063-intake-handoffs.cbor` MUST be present and its SHA-256 digest MUST equal `intake_catalog_digest`. |
-| WOS-TV-008 | Each intake catalog row MUST resolve `intake_event_hash` to exactly one exported `wos.kernel.intakeAccepted` event and MUST field-match the decoded WOS `IntakeAccepted` record against the included Formspec `IntakeHandoff`. |
+| WOS-TV-008 | Each intake catalog row MUST resolve `intake_event_hash` to exactly one exported `wos.kernel.intake_accepted` event and MUST field-match the decoded WOS `IntakeAccepted` record against the included Formspec `IntakeHandoff`. |
 | WOS-TV-009 | The WOS validator MUST recompute `handoff.responseHash` over the catalogued canonical Response bytes. A mismatch is an intake-handoff finding. |
-| WOS-TV-010 | If `case_created_event_hash` is present, it MUST resolve to exactly one exported `wos.kernel.caseCreated` event and MUST field-match the decoded WOS `CaseCreated` record against the handoff evidence refs and created case ref. |
+| WOS-TV-010 | If `case_created_event_hash` is present, it MUST resolve to exactly one exported `wos.kernel.case_created` event and MUST field-match the decoded WOS `CaseCreated` record against the handoff evidence refs and created case ref. |
 | WOS-TV-011 | If `handoff.initiationMode = "workflowInitiated"`, `case_created_event_hash` MUST be absent. If `handoff.initiationMode = "publicIntake"`, `case_created_event_hash` MUST be present. |
 | WOS-TV-012 | Intake catalog rows MUST NOT duplicate `intake_event_hash`. |
 | WOS-TV-013 | If `trellis.export.open-clocks.v1` is present, each `open-clocks.json` row whose `computed_deadline` is before catalog `sealed_at` MUST be reported as an advisory WOS finding. This advisory MUST NOT by itself fail composed integrity. |

@@ -406,7 +406,9 @@ Phase 1 does not ship a post-quantum suite. It pins the migration seam and the o
 
 Trellis uses RFC 9052 COSE_Sign1 directly. Implementations MUST use a normal COSE library's signing preimage, not a Trellis-specific self-reference workaround.
 
-**Embedded payload.** Every Trellis COSE_Sign1 artifact is the CBOR tag-18 4-array `[protected, unprotected, payload, signature]` of [RFC 9052] §4.2, with the payload bstr carried at array position 3 (i.e., embedded). Trellis does not use detached payloads: the `payload` field MUST NOT be `nil`, and a verifier MUST reject a COSE_Sign1 whose payload bstr is absent or replaced with `nil`.
+**Payload mode.** Every Trellis ledger/export COSE_Sign1 artifact — Event, Checkpoint, Export Manifest, and signing-key-registry administrative entry — is the CBOR tag-18 4-array `[protected, unprotected, payload, signature]` of [RFC 9052] §4.2, with the payload bstr carried at array position 3 (i.e., embedded). For those artifacts, the `payload` field MUST NOT be `nil`, and a verifier MUST reject a COSE_Sign1 whose payload bstr is absent or replaced with `nil`.
+
+COSE_Sign1 envelopes used only as detached signatures over externally supplied canonical bytes MAY set `payload = nil` when they carry `profile_id` and are not themselves an Event, Checkpoint, Export Manifest, or signing-key-registry administrative entry. A detached verifier MUST reconstruct the RFC 9052 `Sig_structure` over the externally supplied bytes. If an envelope embeds a payload and the caller also supplies external bytes, the verifier MUST first require byte equality between the embedded payload and the supplied bytes; mismatch is a verification failure before primitive signature acceptance.
 
 For every Trellis COSE_Sign1 artifact, the protected header MUST contain:
 
@@ -418,7 +420,9 @@ For every Trellis COSE_Sign1 artifact, the protected header MUST contain:
 
 The protected header MAY additionally carry `artifact_type` under integer label `-65538` with values `"event"`, `"checkpoint"`, `"manifest"`, or another registered value. If present, a verifier MUST check that it matches the containing artifact. If absent, the containing archive member or enclosing structure supplies the artifact type.
 
-**Label rationale and registry.** `alg` and `kid` use the integer labels registered in [RFC 9052] §3.1. The Trellis-specific headers `suite_id` and `artifact_type` use negative integer labels in the COSE private-use range (per [RFC 9052] §1.4 / §11.3), placed below `-65536` to stay clear of the 16-bit-wide IANA-assigned ranges. Future Trellis-introduced protected-header keys MUST be assigned sequentially-descending integer labels from this namespace and registered alongside the `suite_id` registry (§26.2). Implementations MUST NOT use text-string labels for these headers; the integer labels above are the only conformant encoding.
+The protected header MAY additionally carry `profile_id` under integer label `-65539`. Envelopes that dispatch semantic verification plugins from the COSE protected header MUST carry `profile_id`; Phase 1 Core event, checkpoint, and manifest artifacts MAY omit it when the containing archive member or enclosing structure supplies the artifact role. A verifier that supports plugin-dispatched artifacts MUST treat `profile_id` as protected dispatch input and MUST reject an artifact whose `profile_id` is unknown for the verification context.
+
+**Label rationale and registry.** `alg` and `kid` use the integer labels registered in [RFC 9052] §3.1. The Trellis-specific headers `suite_id`, `artifact_type`, and `profile_id` use negative integer labels in the COSE private-use range (per [RFC 9052] §1.4 / §11.3), placed below `-65536` to stay clear of the 16-bit-wide IANA-assigned ranges. `profile_id = -65539` is the next sequentially-descending allocation after `suite_id = -65537` and `artifact_type = -65538`. Future Trellis-introduced protected-header keys MUST be assigned sequentially-descending integer labels from this namespace and registered alongside the `suite_id` registry (§26.2). Implementations MUST NOT use text-string labels for these headers; the integer labels above are the only conformant encoding.
 
 **Protected-header map serialization.** The COSE protected header is itself a CBOR map wrapped in a bstr; its bytes determine the `Sig_structure` preimage and therefore the signature. The protected-header map MUST be serialized per the dCBOR rules of §5.1. Because §5.1 specifies byte-wise lexicographic ordering of the canonical CBOR encoding of each key, CBOR integer keys are effectively ordered by numeric value for single-byte-encoded keys and by their encoded bytes otherwise; duplicate keys MUST be rejected. A verifier MUST recompute `Sig_structure` using the exact protected-header bstr bytes present in the COSE envelope; it MUST NOT re-serialize the map.
 
@@ -427,10 +431,10 @@ To sign an Event, Checkpoint, or Export Manifest:
 1. Build the artifact payload map (`EventPayload`, `CheckpointPayload`, or `ExportManifestPayload`) with no signature field.
 2. Serialize the payload map as dCBOR (§5).
 3. Construct a COSE_Sign1 object whose payload is those bytes.
-4. Populate the protected header with `alg`, `kid`, and `suite_id`.
+4. Populate the protected header with `alg`, `kid`, and `suite_id`; artifacts that dispatch semantic verification plugins also populate `profile_id`.
 5. Sign the RFC 9052 `Sig_structure` array `["Signature1", protected, external_aad, payload]`, with `external_aad` equal to the zero-length byte string for Phase 1.
 
-A verifier uses the protected-header `kid` to resolve the public key via the signing-key registry (§8), uses protected-header `suite_id` and `alg` to select the suite, and verifies the COSE_Sign1 signature over the standard `Sig_structure`. Signature verification is independent of all other verification steps.
+A verifier uses the protected-header `kid` to resolve the public key via the signing-key registry (§8), uses protected-header `suite_id` and `alg` to select the suite, uses protected-header `profile_id` when plugin dispatch is active, and verifies the COSE_Sign1 signature over the standard `Sig_structure`. For embedded Trellis ledger/export artifacts, the signed payload bytes are the COSE payload bstr. For detached signatures, the signed payload bytes are supplied by the caller and checked under the payload-mode rule above. Signature verification is independent of all other verification steps.
 
 ---
 
@@ -815,6 +819,7 @@ Phase 1 reserves these domain tags. An implementation MUST NOT use any of these 
 - `trellis-transition-attestation-v1` — Posture-transition attestation signature preimage `dCBOR([transition_id, effective_at, authority_class])` per Companion A.5 `Attestation` shared rule
 - `trellis-presentation-artifact-v1` — SHA-256 preimage for `PresentationArtifact.content_hash` carried by `trellis.certificate-of-completion.v1` events (ADR 0007). Domain-separates the rendered PDF / HTML bytes from event-payload, content, checkpoint, and Merkle-tree hashing.
 - `trellis-user-content-attestation-v1` — Ed25519 signature preimage for `UserContentAttestationPayload.signature` carried by `trellis.user-content-attestation.v1` events (ADR 0010). Inner preimage is `dCBOR([attestation_id, attested_event_hash, attested_event_position, attestor, identity_attestation_ref, signing_intent, attested_at])`. Distinct from `trellis-transition-attestation-v1` so a wrongly-typed user-content attestation cannot cross-validate against the operator-actor posture-transition family, and vice versa.
+- `trellis-wos-preledger-idempotency-v1` — SHA-256 preimage for WOS direct case-ledger creation before the case ledger exists. Inner preimage is `dCBOR({ "tenant": tenant, "idempotency_token": token })`, with `tenant` and `token` supplied by the WOS boundary operation that emits `wos.kernel.case_created`. Distinct from the custody-hook `trellis-wos-idempotency-v1` tag, whose WOS-owned input is `(caseId, recordId)`.
 
 ---
 
@@ -1211,6 +1216,8 @@ Traceability: **TR-CORE-158** (structural `bstr .size (1..64)` bound + `idempote
 
 An idempotency identity is the pair `(ledger_scope, idempotency_key)`. **The identity is permanent within that ledger scope.** For a given `ledger_scope`, a specific `idempotency_key` value identifies exactly one canonical event forever; key reuse within the same ledger scope after any TTL expiry is forbidden. A Canonical Append Service MUST NOT reuse the same idempotency identity for a different authored payload after a clock interval, API TTL, dedup-store compaction, or operator lifecycle event. Retry budgets, API TTLs, and dedup-store lifecycle are operational policy and are explicitly deferred to the Trellis Operational Companion §18 (Append Idempotency (Operational)); those operator-layer concerns do not relax this Core identity rule.
 
+**Pre-ledger genesis idempotency.** A deployment that creates a ledger and appends its genesis event in one boundary operation does not yet have an existing ledger row to consult, but it still MUST NOT rely on an HTTP deduplication cache as the source of truth. For WOS direct case-ledger creation, the pre-ledger reservation identity is `(tenant, idempotency_token)` and the event's `idempotency_key` is the 32-byte digest produced with the `trellis-wos-preledger-idempotency-v1` tag in §9.8. The Canonical Append Service MUST reserve `(tenant, idempotency_token)` durably in the same transaction or recovery unit that creates the case ledger and admits the genesis event. Successful replay of the same reservation resolves to the original genesis event; reuse with different case identity or different authored payload is a §17.3 conflict and MUST NOT create a second ledger. After the genesis event exists, normal `(ledger_scope, idempotency_key)` resolution applies to that event forever.
+
 For a given `idempotency_key` within a declared ledger scope, a Canonical Append Service MUST resolve every successful retry to exactly one of:
 
 1. **Same canonical reference.** The exact canonical event hash that was admitted on the first successful submission. The service returns the same `canonical_event_hash`, and the payload `content_hash` is byte-equal to the original.
@@ -1570,7 +1577,8 @@ VERIFY(E) -> VerificationReport
      a. Resolve protected-header kid via embedded 030-signing-key-registry.cbor.
         If unresolvable, abort with report.unresolvable_manifest_kid.
      b. Verify protected-header alg and suite_id are registered and consistent.
-     c. Verify the RFC 9052 Sig_structure signature over the manifest payload.
+     c. Verify the RFC 9052 Sig_structure signature over the embedded manifest payload.
+        A manifest with `payload = nil` is non-conformant in this verifier path.
         If invalid,
         abort with report.manifest_signature_invalid.
      d. Decode the COSE payload as ExportManifestPayload; reject unknown top-level fields.
@@ -1602,7 +1610,8 @@ VERIFY(E) -> VerificationReport
         `Retired` is historical-verification-permitted (§8.4) and does not
         itself fail verification of historical events.
      b. Verify protected-header alg and suite_id, then verify the COSE Sig_structure (§7.4).
-     c. Decode the COSE payload as EventPayload; reject unknown top-level fields.
+        An Event with `payload = nil` is non-conformant in this verifier path.
+     c. Decode the embedded COSE payload as EventPayload; reject unknown top-level fields.
      d. Recompute author_event_hash(payload) per §9.5. Check equals payload.author_event_hash.
      e. Recompute canonical_event_hash(payload) per §9.2.
      f. Check payload.ledger_scope == manifest.scope.
@@ -1649,7 +1658,8 @@ VERIFY(E) -> VerificationReport
 
 5. For each Checkpoint COSE_Sign1 c in 040-checkpoints.cbor (in order):
      a. Resolve protected-header kid and verify COSE Sig_structure.
-     b. Decode the COSE payload as CheckpointPayload; reject unknown top-level fields.
+        A Checkpoint with `payload = nil` is non-conformant in this verifier path.
+     b. Decode the embedded COSE payload as CheckpointPayload; reject unknown top-level fields.
      c. Recompute Merkle root over canonical_event_hash(events[0..payload.tree_size])
         per §11.3. Check bit-equal to payload.tree_head_hash.
      d. If not the first checkpoint: check payload.prev_checkpoint_hash == digest of prior c.
@@ -1954,7 +1964,7 @@ VERIFY(E) -> VerificationReport
             fixtures may continue using
             `x-trellis-test/identity-attestation/v1` under §14.6. The WOS
             composed verifier admits the canonical WOS identity-attestation
-            event type `wos.identity.identityAttestation` (§23.4) through the
+            event type `wos.assurance.identity_attestation` (§23.4) through the
             consumer-owned validation seam, not through Trellis center logic.
             Confirm its `ledger_scope` matches; confirm its
             `sequence < attested_event_position` (identity proof
@@ -2438,7 +2448,7 @@ The `wos.*` event-type family is registered in the bound registry (§14) with th
 - **Namespace disjointness.** The `wos.*` family and the `trellis.*` family are mutually disjoint. A Trellis-authored envelope whose authored-fact material is not a WOS governance record MUST NOT use a `wos.*` identifier, and a WOS runtime MUST NOT emit a `trellis.*` identifier as its `event_type`. A Trellis processor MUST NOT admit a WOS governance record under a `trellis.*` identifier, and MUST NOT admit a non-WOS authored fact under a `wos.*` identifier.
 - Registered `wos.*` identifiers name the governance-record *kind*, not its outcome. `wos.determination`, `wos.review-close`, `wos.assignment`, `wos.adjudication` are conformant shapes; `wos.determination.granted`, `wos.determination.denied`, `wos.review-close.adverse` are NON-CONFORMANT and MUST NOT be registered. WOS outcome is carried in the encrypted payload and in `EventHeader.outcome_commitment` per §12.2.
 - `wos.*` identifiers MUST resolve to WOS governance semantics defined by the WOS specification at the registry-bound version (§14.2). A bound-registry entry for a `wos.*` identifier names the WOS spec version it refers to; a registry change that re-points the identifier to a different WOS semantic version is a new registry binding per §14.5.
-- `wos.identity.identityAttestation` is the canonical identity-attestation event type for ADR 0068 D-3.1 `IdentityAttestation` records. The identifier follows the WOS custody-hook taxonomy `wos.<layer>.<recordKind>`: layer `identity`, record kind `identityAttestation`. WOS-aware user-content-attestation identity resolution (§19 step 6d) admits this event type through the consumer-owned validator, while Trellis center conformance continues to admit only `x-trellis-test/identity-attestation/v1` inside core fixtures.
+- `wos.assurance.identity_attestation` is the canonical identity-attestation event type for ADR 0068 D-3.1 `IdentityAttestation` records. The identifier follows the WOS custody-hook taxonomy `wos.<layer>.<record_kind>`: layer `assurance`, record kind `identity_attestation`. WOS-aware user-content-attestation identity resolution (§19 step 6d) admits this event type through the consumer-owned validator, while Trellis center conformance continues to admit only `x-trellis-test/identity-attestation/v1` inside core fixtures.
 - The `wos.` prefix is reserved to the WOS specification family in the bound registry. Vendors extending WOS with deployment-local governance records MUST use a registered `x-` identifier under §6.7 that does not shadow any upstream specification's reserved `x-*` prefix (cf. WOS Kernel §10.6, which reserves `x-wos-` for future WOS-normative use). A bare `wos.*` identifier MUST NOT be minted outside the WOS specification family.
 
 ### 23.5 Idempotency-key construction for WOS retries
@@ -2630,6 +2640,7 @@ The Phase 1 success criterion (§1 Status) is that a second implementation, writ
 
 digest     = bstr .size 32      ; SHA-256
 suite_id   = uint
+profile_id = uint
 kid        = bstr .size 16
 timestamp  = [uint, uint .le 999999999]  ; [seconds since Unix epoch UTC, nanos within second]
 ; Traceability: TR-CORE-093.
@@ -2724,8 +2735,21 @@ KeyBagEntry = {
 
 ; --- Signature --------------------------------------------------------
 
+COSEProtectedHeaders = {
+  1 => int,               ; alg, Phase 1: -8 (EdDSA)
+  4 => kid,
+  -65537 => suite_id,
+  ? -65538 => tstr,       ; artifact_type
+  ? -65539 => profile_id,
+}
+
 COSESign1Bytes = bstr   ; RFC 9052 COSE_Sign1 tagged CBOR value as bytes.
-                       ; Protected headers carry alg, kid, suite_id.
+                       ; Protected headers carry alg, kid, suite_id, and
+                       ; plugin-dispatched artifacts carry profile_id.
+                       ; Events, checkpoints, manifests, and key-registry
+                       ; administrative entries embed payload bstrs; detached
+                       ; signatures over caller-supplied canonical bytes may
+                       ; use payload = nil only under §7.4 payload-mode rules.
 
 CanonicalEventHashPreimage = {
   version:       uint .size 1,
