@@ -26,6 +26,8 @@ WOS_GOVERNANCE_DETERMINATION_RESCINDED_EVENT_TYPE = (
     "wos.governance.determination_rescinded"
 )
 WOS_GOVERNANCE_REINSTATED_EVENT_TYPE = "wos.governance.reinstated"
+WOS_GOVERNANCE_CLOCK_STARTED_EVENT_TYPE = "wos.governance.clock_started"
+WOS_GOVERNANCE_CLOCK_RESOLVED_EVENT_TYPE = "wos.governance.clock_resolved"
 CLOCK_STARTED_RECORD_KIND = "clockStarted"
 CLOCK_RESOLVED_RECORD_KIND = "clockResolved"
 CLOCK_RESOLUTION_PAUSED = "paused"
@@ -486,6 +488,18 @@ def _validate_clock_segments(
     for event in events:
         try:
             details = core._decode_event_details(event)
+        except core.VerifyError:
+            continue
+        # Spec contract (`trellis/specs/wos-trellis-verification.md` §3):
+        # clock semantics gate on `event_type`, not on payload shape. A
+        # non-clock event whose payload happens to deserialize as a clock
+        # record MUST NOT participate in segment validation.
+        if details.event_type not in (
+            WOS_GOVERNANCE_CLOCK_STARTED_EVENT_TYPE,
+            WOS_GOVERNANCE_CLOCK_RESOLVED_EVENT_TYPE,
+        ):
+            continue
+        try:
             payload_bytes = core._readable_payload_bytes(details, payload_blobs)
             if payload_bytes is None:
                 continue

@@ -15,3 +15,5 @@ pub(crate) const WOS_GOVERNANCE_DETERMINATION_PREFIX: &str = "wos.governance.det
 pub(crate) const WOS_GOVERNANCE_DETERMINATION_RESCINDED_EVENT_TYPE: &str =
     "wos.governance.determination_rescinded";
 pub(crate) const WOS_GOVERNANCE_REINSTATED_EVENT_TYPE: &str = "wos.governance.reinstated";
+pub(crate) const WOS_GOVERNANCE_CLOCK_STARTED_EVENT_TYPE: &str = "wos.governance.clock_started";
+pub(crate) const WOS_GOVERNANCE_CLOCK_RESOLVED_EVENT_TYPE: &str = "wos.governance.clock_resolved";

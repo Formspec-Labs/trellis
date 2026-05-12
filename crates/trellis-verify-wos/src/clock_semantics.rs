@@ -10,7 +10,10 @@ use serde_json::Value as JsonValue;
 use trellis_types::{map_lookup_map, map_lookup_optional_value, map_lookup_text};
 use trellis_verify::{DomainEvent, DomainExport, DomainFinding, Severity, TrellisTimestamp};
 
-use crate::event_types::OPEN_CLOCKS_EXPORT_EXTENSION;
+use crate::event_types::{
+    OPEN_CLOCKS_EXPORT_EXTENSION, WOS_GOVERNANCE_CLOCK_RESOLVED_EVENT_TYPE,
+    WOS_GOVERNANCE_CLOCK_STARTED_EVENT_TYPE,
+};
 
 const CLOCK_STARTED_RECORD_KIND: &str = "clockStarted";
 const CLOCK_RESOLVED_RECORD_KIND: &str = "clockResolved";
@@ -23,6 +26,15 @@ pub(crate) fn validate_clock_semantics(events: &[DomainEvent]) -> Vec<DomainFind
     let mut findings = Vec::new();
 
     for event in events {
+        // Spec contract (`trellis/specs/wos-trellis-verification.md` §3): clock
+        // semantics gate on `event_type`, not on payload shape. A non-clock
+        // event whose payload happens to deserialize as a clock record MUST
+        // NOT participate in segment validation.
+        if event.event_type != WOS_GOVERNANCE_CLOCK_STARTED_EVENT_TYPE
+            && event.event_type != WOS_GOVERNANCE_CLOCK_RESOLVED_EVENT_TYPE
+        {
+            continue;
+        }
         let Some(payload) = event.payload.as_deref() else {
             continue;
         };

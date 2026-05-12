@@ -129,6 +129,31 @@ fn validator_allows_determination_after_reinstatement() {
 }
 
 #[test]
+fn validator_ignores_clock_shaped_payload_on_non_clock_event_type() {
+    // Spec contract (`trellis/specs/wos-trellis-verification.md` §3):
+    // clock semantics are gated by `event_type`. A non-clock event whose
+    // payload happens to deserialize as a clock record MUST NOT participate
+    // in segment validation, even when followed by a real conflicting
+    // clock_started — there is no "paused" segment to mismatch against.
+    let findings = WosRecordValidator.validate_events(&[
+        event(
+            "wos.kernel.case_created",
+            1,
+            Some(clock_started("clock-1", "review", Some("fed-calendar"))),
+        ),
+        event(
+            "wos.governance.clock_started",
+            2,
+            Some(clock_started("clock-1", "review", Some("state-calendar"))),
+        ),
+    ]);
+    assert!(
+        findings.is_empty(),
+        "non-clock event_type must not trigger clock_calendar_mismatch, got: {findings:?}"
+    );
+}
+
+#[test]
 fn validator_reports_clock_calendar_mismatch_as_wos_finding() {
     let findings = WosRecordValidator.validate_events(&[
         event(
