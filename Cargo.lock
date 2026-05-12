@@ -909,6 +909,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "integrity-cbor"
+version = "0.1.0"
+dependencies = [
+ "ciborium",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2048,8 +2056,7 @@ dependencies = [
 name = "trellis-types"
 version = "0.1.0"
 dependencies = [
- "ciborium",
- "sha2 0.10.9",
+ "integrity-cbor",
 ]
 
 [[package]]

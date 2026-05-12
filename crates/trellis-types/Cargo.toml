@@ -5,5 +5,4 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-sha2 = "0.10"
-ciborium = "0.2"
+integrity-cbor = { path = "../../../integrity-stack/crates/integrity-cbor" }
