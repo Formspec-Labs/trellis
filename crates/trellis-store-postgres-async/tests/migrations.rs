@@ -1,12 +1,12 @@
 mod support;
 
 use support::TestCluster;
-use trellis_store_postgres_async::{MigrationError, build_pool, run_migrations};
+use trellis_store_postgres_async::{MigrationError, run_migrations};
 
 #[tokio::test]
 async fn migrations_apply_idempotently() {
     let cluster = TestCluster::start_without_migrations();
-    let pool = build_pool(&cluster.connection_url(), 4).await.unwrap();
+    let pool = cluster.tls_pool(4).await;
 
     run_migrations(&pool).await.unwrap();
     run_migrations(&pool).await.unwrap();
@@ -22,7 +22,7 @@ async fn migrations_apply_idempotently() {
 #[tokio::test]
 async fn forward_rollback_detected_when_schema_has_unknown_version() {
     let cluster = TestCluster::start_without_migrations();
-    let pool = build_pool(&cluster.connection_url(), 4).await.unwrap();
+    let pool = cluster.tls_pool(4).await;
 
     run_migrations(&pool).await.unwrap();
     sqlx::query("INSERT INTO trellis_schema_migrations (version) VALUES (99)")
@@ -43,8 +43,8 @@ async fn forward_rollback_detected_when_schema_has_unknown_version() {
 #[tokio::test]
 async fn concurrent_migration_runners_serialize_via_advisory_lock() {
     let cluster = TestCluster::start_without_migrations();
-    let pool_a = build_pool(&cluster.connection_url(), 4).await.unwrap();
-    let pool_b = build_pool(&cluster.connection_url(), 4).await.unwrap();
+    let pool_a = cluster.tls_pool(4).await;
+    let pool_b = cluster.tls_pool(4).await;
 
     let (a, b) = tokio::join!(run_migrations(&pool_a), run_migrations(&pool_b));
     a.unwrap();

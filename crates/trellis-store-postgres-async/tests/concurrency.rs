@@ -5,7 +5,7 @@ use std::sync::Arc;
 use sqlx::PgPool;
 use support::TestCluster;
 use tokio::task::JoinSet;
-use trellis_store_postgres_async::{AppendError, append_event_in_tx, build_pool, run_migrations};
+use trellis_store_postgres_async::{AppendError, append_event_in_tx, run_migrations};
 use trellis_types::StoredEvent;
 
 fn event(scope: &[u8], sequence: u64, canonical: &[u8], signed: &[u8], idem: &[u8]) -> StoredEvent {
@@ -20,11 +20,16 @@ fn event(scope: &[u8], sequence: u64, canonical: &[u8], signed: &[u8], idem: &[u
 
 async fn started_pool(max_connections: u32) -> (TestCluster, PgPool) {
     let cluster = TestCluster::start_without_migrations();
-    let pool = build_pool(&cluster.connection_url(), max_connections)
-        .await
-        .unwrap();
+    let pool = cluster.tls_pool(max_connections).await;
     run_migrations(&pool).await.unwrap();
     (cluster, pool)
+}
+
+#[tokio::test]
+async fn cleartext_rejected_by_tls_required_server() {
+    let cluster = TestCluster::start_without_migrations();
+
+    let _pool = cluster.tls_pool(1).await;
 }
 
 #[tokio::test]
