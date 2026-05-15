@@ -3357,6 +3357,7 @@ dependencies = [
  "trellis-service-client",
  "trellis-store-postgres-async",
  "trellis-types",
+ "utoipa",
  "wos-events",
 ]
 
@@ -3384,6 +3385,7 @@ dependencies = [
  "stack-common-error",
  "stack-common-http",
  "tokio",
+ "utoipa",
  "wos-events",
 ]
 

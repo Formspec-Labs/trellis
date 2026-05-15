@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgPool;
 use stack_common_auth::{BaseClaims, Claims, JwtConfig, JwtVerifier};
-use stack_common_error::StackError;
+use stack_common_error::{ProblemJson, StackError};
 use stack_common_http::idempotency::{
     HttpIdempotencyState, IDEMPOTENCY_KEY_HEADER, IdempotencyCall, IdempotencyDecision,
     IdempotencyDriverError, IdempotencyFailure, IdempotencyOperation, idempotency_middleware,
@@ -54,15 +54,81 @@ use trellis_server_ports::{
     S3ObjectConfig, ScopeAction, ScopeAuthorization, ScopeAuthorizer,
 };
 use trellis_service_client::{
-    ComputeSensitivity as WireComputeSensitivity, SubstrateAppendBody, SubstrateAppendResult,
-    VerificationReceipt,
+    AppendActor, ClientAttestation, ComputeContext, ComputeSensitivity, SubstrateAppendBody,
+    SubstrateAppendResult, VerificationReceipt,
 };
 use trellis_types::{CONTENT_DOMAIN, EVENT_DOMAIN, StoredEvent};
+use utoipa::{OpenApi, ToSchema};
 use wos_events::{ProvenanceKind, ProvenanceRecord};
 
 const PROFILE_ID: u64 = 2;
 const EVENT_TYPE_REGISTRY_VERSION: &str = "wos-events:2026-05-15";
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:8080";
+
+/// OpenAPI registry for the Trellis substrate service.
+#[derive(Debug, OpenApi)]
+#[openapi(
+    info(
+        title = "Trellis Substrate API",
+        version = "1.0.0",
+        description = "HTTP boundary for appending events, reading proof bundles, and retrieving registry projections from the Trellis substrate service.",
+        license(name = "Apache-2.0"),
+    ),
+    servers(
+        (url = "/", description = "Trellis service root."),
+    ),
+    paths(
+        append_event,
+        head_bundle,
+        pinned_bundle,
+        signing_key_registry,
+        event_type_registry,
+        openapi_json,
+    ),
+    components(schemas(
+        AppendActor,
+        ClientAttestation,
+        ComputeContext,
+        ComputeSensitivity,
+        EventTypeRegistryEntry,
+        EventTypeRegistryView,
+        OpenApiDocument,
+        ProblemJson,
+        SubstrateAppendBody,
+        SubstrateAppendResult,
+        VerificationReceipt,
+    )),
+    tags(
+        (name = "events", description = "Append proof-bearing events into a Trellis scope."),
+        (name = "bundles", description = "Read Trellis export bundles by scope and checkpoint."),
+        (name = "registries", description = "Read registry snapshots bound into Trellis bundles."),
+        (name = "meta", description = "API description endpoints."),
+    ),
+)]
+pub struct TrellisServerOpenApi;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct EventTypeRegistryEntry {
+    event_type: String,
+    schema_ref: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+struct EventTypeRegistryView {
+    registry_version: String,
+    event_types: Vec<EventTypeRegistryEntry>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+struct OpenApiDocument {
+    openapi: String,
+    info: serde_json::Value,
+    paths: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    components: Option<serde_json::Value>,
+}
 
 #[must_use]
 pub const fn default_bind_addr() -> &'static str {
@@ -547,6 +613,7 @@ pub fn router(state: TrellisServerState) -> Result<Router, StackError> {
     ));
 
     Ok(Router::new()
+        .route("/openapi.json", get(openapi_json))
         .route("/v1/scopes/{scope}/events", append)
         .route("/v1/scopes/{scope}/bundles/head", get(head_bundle))
         .route(
@@ -673,6 +740,40 @@ impl HealthProbe for TrellisHealthProbe {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/openapi.json",
+    responses(
+        (status = 200, description = "OpenAPI specification document.", body = OpenApiDocument)
+    ),
+    tag = "meta",
+    operation_id = "openapi_json",
+)]
+async fn openapi_json() -> Result<Json<serde_json::Value>, StackError> {
+    serde_json::to_value(TrellisServerOpenApi::openapi())
+        .map(Json)
+        .map_err(|error| StackError::internal(format!("OpenAPI serialization failed: {error}")))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/scopes/{scope}/events",
+    params(
+        ("scope" = String, Path, description = "Trellis ledger scope."),
+        ("idempotency-key" = String, Header, description = "HTTP replay key; must match body idempotencyKey.")
+    ),
+    request_body = SubstrateAppendBody,
+    responses(
+        (status = 201, description = "Event appended and proof bundle published.", body = SubstrateAppendResult),
+        (status = 400, description = "Invalid append request.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 401, description = "Service token rejected.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 403, description = "Scope action forbidden.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 409, description = "Idempotency key or sequence conflict.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 503, description = "Substrate dependency unavailable.", body = ProblemJson, content_type = "application/problem+json")
+    ),
+    tag = "events",
+    operation_id = "append_event",
+)]
 async fn append_event(
     State(state): State<TrellisServerState>,
     Path(scope): Path<String>,
@@ -773,6 +874,18 @@ async fn append_event(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/scopes/{scope}/bundles/head",
+    params(("scope" = String, Path, description = "Trellis ledger scope.")),
+    responses(
+        (status = 200, description = "Current Trellis export bundle.", content_type = "application/zip"),
+        (status = 404, description = "Scope has no bundle.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 503, description = "Bundle store unavailable.", body = ProblemJson, content_type = "application/problem+json")
+    ),
+    tag = "bundles",
+    operation_id = "head_bundle",
+)]
 async fn head_bundle(
     State(state): State<TrellisServerState>,
     Path(scope): Path<String>,
@@ -785,6 +898,22 @@ async fn head_bundle(
     bundle_response(&state, &bundle).await
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/scopes/{scope}/bundles/{checkpoint_digest}",
+    params(
+        ("scope" = String, Path, description = "Trellis ledger scope."),
+        ("checkpoint_digest" = String, Path, description = "Checkpoint digest in `sha256:<64 hex>` form.")
+    ),
+    responses(
+        (status = 200, description = "Pinned Trellis export bundle.", content_type = "application/zip"),
+        (status = 400, description = "Invalid checkpoint digest.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 404, description = "Pinned checkpoint bundle not found.", body = ProblemJson, content_type = "application/problem+json"),
+        (status = 503, description = "Bundle store unavailable.", body = ProblemJson, content_type = "application/problem+json")
+    ),
+    tag = "bundles",
+    operation_id = "pinned_bundle",
+)]
 async fn pinned_bundle(
     State(state): State<TrellisServerState>,
     Path((scope, checkpoint_digest)): Path<(String, String)>,
@@ -810,6 +939,17 @@ async fn pinned_bundle(
     bundle_response(&state, &record).await
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/scopes/{scope}/registries/signing-keys",
+    params(("scope" = String, Path, description = "Trellis ledger scope.")),
+    responses(
+        (status = 200, description = "CBOR signing-key registry snapshot.", content_type = "application/cbor"),
+        (status = 503, description = "Registry unavailable.", body = ProblemJson, content_type = "application/problem+json")
+    ),
+    tag = "registries",
+    operation_id = "signing_key_registry",
+)]
 async fn signing_key_registry(
     State(state): State<TrellisServerState>,
     Path(scope): Path<String>,
@@ -821,14 +961,25 @@ async fn signing_key_registry(
     Ok(bytes_response("application/cbor", bytes))
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/scopes/{scope}/registries/event-types",
+    params(("scope" = String, Path, description = "Trellis ledger scope.")),
+    responses(
+        (status = 200, description = "Event-type registry projection.", body = EventTypeRegistryView),
+        (status = 503, description = "Registry unavailable.", body = ProblemJson, content_type = "application/problem+json")
+    ),
+    tag = "registries",
+    operation_id = "event_type_registry",
+)]
 async fn event_type_registry(
     State(state): State<TrellisServerState>,
     Path(scope): Path<String>,
     tenant_scope: TenantScope,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, StackError> {
+) -> Result<Json<EventTypeRegistryView>, StackError> {
     read_authorized(&state, &scope, &tenant_scope, &headers).await?;
-    Ok(Json(event_type_registry_json()))
+    Ok(Json(event_type_registry_view()))
 }
 
 async fn read_authorized(
@@ -1185,7 +1336,7 @@ fn validate_idempotency_header(headers: &HeaderMap, body_key: &str) -> Result<()
 }
 
 fn validate_compute_context(body: &SubstrateAppendBody) -> Result<(), StackError> {
-    if body.compute_context.sensitivity != WireComputeSensitivity::PublicMetadata {
+    if body.compute_context.sensitivity != ComputeSensitivity::PublicMetadata {
         return Err(StackError::bad_request(
             "this Trellis server path only admits publicMetadata payloads",
         ));
@@ -1239,13 +1390,26 @@ fn timestamp_value(timestamp: TrellisTimestamp) -> Value {
     ])
 }
 
+fn event_type_registry_view() -> EventTypeRegistryView {
+    EventTypeRegistryView {
+        registry_version: EVENT_TYPE_REGISTRY_VERSION.to_string(),
+        event_types: WOS_EVENT_TYPES
+            .iter()
+            .map(|event_type| EventTypeRegistryEntry {
+                event_type: (*event_type).to_string(),
+                schema_ref: format!("wos-events://{event_type}"),
+            })
+            .collect(),
+    }
+}
+
 fn event_type_registry_json() -> serde_json::Value {
     json!({
         "registryVersion": EVENT_TYPE_REGISTRY_VERSION,
-        "eventTypes": WOS_EVENT_TYPES.iter().map(|event_type| {
+        "eventTypes": event_type_registry_view().event_types.into_iter().map(|entry| {
             json!({
-                "eventType": event_type,
-                "schemaRef": format!("wos-events://{event_type}")
+                "eventType": entry.event_type,
+                "schemaRef": entry.schema_ref,
             })
         }).collect::<Vec<_>>()
     })
@@ -1406,6 +1570,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn openapi_document_is_served_and_declares_substrate_routes() {
+        let app = router(test_state()).expect("router");
+        let response = app
+            .oneshot(get_request("/openapi.json"))
+            .await
+            .expect("OpenAPI response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_trellis_openapi_shape(&doc);
+    }
+
+    #[test]
+    fn openapi_registry_declares_trellis_append_response_shape() {
+        let doc = serde_json::to_value(TrellisServerOpenApi::openapi()).unwrap();
+        assert_trellis_openapi_shape(&doc);
+        let schemas = doc["components"]["schemas"].as_object().unwrap();
+        let append_properties = schemas["SubstrateAppendResult"]["properties"]
+            .as_object()
+            .unwrap();
+        for property in [
+            "eventId",
+            "sequence",
+            "canonicalEventHash",
+            "checkpointRef",
+            "bundleRef",
+            "verificationReceipt",
+        ] {
+            assert!(
+                append_properties.contains_key(property),
+                "SubstrateAppendResult must expose {property}"
+            );
+        }
+        assert!(
+            schemas
+                .get("VerificationReceipt")
+                .and_then(|schema| schema["properties"].as_object())
+                .is_some_and(|properties| {
+                    ["verified", "profileId", "eventType"]
+                        .iter()
+                        .all(|property| properties.contains_key(*property))
+                }),
+            "VerificationReceipt schema must expose verified/profileId/eventType"
+        );
+    }
+
+    #[tokio::test]
     async fn idempotency_replays_same_request_body() {
         let app = router(test_state()).expect("router");
         let body = append_body("idem-2");
@@ -1496,6 +1707,24 @@ mod tests {
             .header("x-wos-cell-id", "cell-a")
             .body(Body::empty())
             .unwrap()
+    }
+
+    fn assert_trellis_openapi_shape(doc: &serde_json::Value) {
+        assert_eq!(doc["openapi"], "3.1.0");
+        assert_eq!(doc["info"]["title"], "Trellis Substrate API");
+        for (path, method) in [
+            ("/openapi.json", "get"),
+            ("/v1/scopes/{scope}/events", "post"),
+            ("/v1/scopes/{scope}/bundles/head", "get"),
+            ("/v1/scopes/{scope}/bundles/{checkpoint_digest}", "get"),
+            ("/v1/scopes/{scope}/registries/signing-keys", "get"),
+            ("/v1/scopes/{scope}/registries/event-types", "get"),
+        ] {
+            assert!(
+                doc["paths"][path].get(method).is_some(),
+                "OpenAPI must include {method} {path}"
+            );
+        }
     }
 
     fn idempotency_from_body(body: &[u8]) -> String {

@@ -15,12 +15,13 @@ use serde::{Deserialize, Serialize};
 use stack_common_error::StackError;
 use stack_common_http::idempotency::IDEMPOTENCY_KEY_HEADER;
 use stack_common_http::tenant::{HeaderConfig, TenantScope};
+use utoipa::ToSchema;
 use wos_events::ProvenanceRecord;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Actor block carried by the Trellis append wire body.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppendActor {
     pub kind: String,
@@ -46,7 +47,7 @@ impl AppendActor {
 }
 
 /// Sensitivity class disclosed for a producer's compute path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ComputeSensitivity {
     PublicMetadata,
@@ -68,7 +69,7 @@ impl ComputeSensitivity {
 }
 
 /// Required delegated-compute disclosure context for append producers.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ComputeContext {
     pub declaration_id: String,
@@ -102,7 +103,7 @@ impl ComputeContext {
 }
 
 /// Optional direct-client attestation block.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientAttestation {
     pub kid: String,
@@ -127,7 +128,7 @@ pub struct SubstrateAppendRequest {
 }
 
 /// JSON body for `POST /v1/scopes/{scope}/events`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubstrateAppendBody {
     pub event_type: String,
@@ -258,7 +259,7 @@ impl SubstrateAppendBody {
 }
 
 /// Verification receipt nested in an append response.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VerificationReceipt {
     pub verified: bool,
@@ -267,7 +268,7 @@ pub struct VerificationReceipt {
 }
 
 /// Append response returned by the Trellis service.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubstrateAppendResult {
     #[serde(alias = "substrateEventId")]

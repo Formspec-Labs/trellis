@@ -30,6 +30,7 @@ trellis-server-ports = { path = "../trellis-server-ports" }
 trellis-service-client = { path = "../trellis-service-client" }
 trellis-store-postgres-async = { path = "../trellis-store-postgres-async" }
 trellis-types = { path = "../trellis-types" }
+utoipa = "5"
 wos-events = { path = "../../../work-spec/crates/wos-events" }
 
 [dev-dependencies]
