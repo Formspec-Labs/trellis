@@ -1,0 +1,17 @@
+[package]
+name = "trellis-server-ports"
+version.workspace = true
+edition.workspace = true
+description = "Composition-root port contracts for the Trellis service boundary"
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+stack-common-error = { path = "../../../stack-common/crates/stack-common-error", default-features = false }
+stack-common-object-store = { path = "../../../stack-common/crates/stack-common-object-store" }
+stack-common-postgres = { path = "../../../stack-common/crates/stack-common-postgres", default-features = false, features = ["pool"] }
+trellis-core = { path = "../trellis-core" }
+trellis-types = { path = "../trellis-types" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

@@ -5,6 +5,7 @@ members = [
     "crates/trellis-cose",
     "crates/trellis-hpke",
     "crates/trellis-core",
+    "crates/trellis-server-ports",
     "crates/trellis-verify",
     "crates/trellis-verify-wos",
     "crates/trellis-witness-registry",
