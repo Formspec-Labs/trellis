@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Check the Trellis HTTP API schema against the live service wire."""
+"""Check the Trellis HTTP API schema against the live service wire.
+
+Uses ``cargo run`` to emit OpenAPI; in CI, reuse a warm ``target/`` (or sccache)
+so repeat runs do not pay full link cost on every invocation.
+"""
 
 from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -81,6 +86,10 @@ def normalize_axum_path(path: str) -> str:
 
 def parse_router_paths(source: str) -> set[str]:
     return {normalize_axum_path(path) for path in re.findall(r'\.route\(\s*"([^"]+)"', source)}
+
+
+def normalize_openapi_path(path: str) -> str:
+    return path.replace("{checkpoint_digest}", "{checkpointDigest}")
 
 
 def require_defs(schema: dict, errors: list[str], names: list[str]) -> dict:
@@ -238,8 +247,6 @@ def check_defs(schema: dict, server_source: str, errors: list[str]) -> None:
 
 
 def check_openapi_append_contract(errors: list[str]) -> None:
-    import subprocess
-
     result = subprocess.run(
         [
             "cargo",
@@ -260,6 +267,61 @@ def check_openapi_append_contract(errors: list[str]) -> None:
         errors.append(f"OpenAPI append contract drift (run cargo test -p trellis-server): {detail}")
 
 
+def emit_openapi_document(errors: list[str]) -> dict | None:
+    result = subprocess.run(
+        ["cargo", "run", "-p", "trellis-server", "--bin", "emit_openapi", "--quiet"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        errors.append(f"OpenAPI emit failed (run cargo run -p trellis-server --bin emit_openapi): {detail}")
+        return None
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        errors.append(f"OpenAPI emit produced invalid JSON: {exc}")
+        return None
+
+
+def check_openapi_operations(schema: dict, openapi: dict, errors: list[str]) -> None:
+    meta = schema.get("x-trellis-http-api")
+    operations = meta.get("operations") if isinstance(meta, dict) else None
+    if not isinstance(operations, list):
+        errors.append("cannot compare OpenAPI operations: schema x-trellis-http-api.operations missing")
+        return
+
+    paths = openapi.get("paths")
+    if not isinstance(paths, dict):
+        errors.append("cannot compare OpenAPI operations: OpenAPI document is missing paths")
+        return
+
+    for operation in operations:
+        operation_id = operation.get("operationId")
+        method = operation.get("method")
+        path = operation.get("path")
+        if not isinstance(operation_id, str) or not isinstance(method, str) or not isinstance(path, str):
+            errors.append("cannot compare OpenAPI operations: invalid operation entry in schema metadata")
+            continue
+        method_key = method.lower()
+        path_item = paths.get(path) or paths.get(normalize_openapi_path(path))
+        if not isinstance(path_item, dict):
+            errors.append(f"OpenAPI missing operation for {method} {path}")
+            continue
+        operation_doc = path_item.get(method_key)
+        if not isinstance(operation_doc, dict):
+            errors.append(f"OpenAPI missing method entry for {method} {path}")
+            continue
+        openapi_operation_id = operation_doc.get("operationId")
+        if openapi_operation_id != operation_id:
+            errors.append(
+                f"OpenAPI operationId mismatch for {method} {path}: "
+                f"expected {operation_id}, got {openapi_operation_id}"
+            )
+
+
 def main() -> int:
     errors: list[str] = []
     try:
@@ -268,6 +330,9 @@ def main() -> int:
         client_source = CLIENT_PATH.read_text(encoding="utf-8")
         check_defs(schema, server_source, errors)
         check_operations(schema, server_source, client_source, errors)
+        openapi = emit_openapi_document(errors)
+        if openapi is not None:
+            check_openapi_operations(schema, openapi, errors)
         check_openapi_append_contract(errors)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         errors.append(str(exc))

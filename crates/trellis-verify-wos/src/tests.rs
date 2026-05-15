@@ -254,20 +254,38 @@ fn validator_admits_wos_identity_attestation_event_type() {
 }
 
 #[test]
-fn wos_event_type_constants_use_f13_snake_case_literals() {
+fn given_wos_event_type_constants_when_checked_against_provenance_kind_then_literals_match() {
+    use wos_events::ProvenanceKind;
+
     assert_eq!(
         WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE,
-        "wos.kernel.signature_affirmation"
+        ProvenanceKind::SignatureAffirmation
+            .canonical_event_literal()
+            .expect("canonical literal")
     );
-    assert_eq!(WOS_INTAKE_ACCEPTED_EVENT_TYPE, "wos.kernel.intake_accepted");
-    assert_eq!(WOS_CASE_CREATED_EVENT_TYPE, "wos.kernel.case_created");
+    assert_eq!(
+        WOS_INTAKE_ACCEPTED_EVENT_TYPE,
+        ProvenanceKind::IntakeAccepted
+            .canonical_event_literal()
+            .expect("canonical literal")
+    );
+    assert_eq!(
+        WOS_CASE_CREATED_EVENT_TYPE,
+        ProvenanceKind::CaseCreated
+            .canonical_event_literal()
+            .expect("canonical literal")
+    );
     assert_eq!(
         WOS_IDENTITY_ATTESTATION_EVENT_TYPE,
-        "wos.assurance.identity_attestation"
+        ProvenanceKind::IdentityAttestation
+            .canonical_event_literal()
+            .expect("canonical literal")
     );
     assert_eq!(
         WOS_GOVERNANCE_DETERMINATION_RESCINDED_EVENT_TYPE,
-        "wos.governance.determination_rescinded"
+        ProvenanceKind::DeterminationRescinded
+            .canonical_event_literal()
+            .expect("canonical literal")
     );
 }
 

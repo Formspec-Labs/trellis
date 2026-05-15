@@ -3620,6 +3620,7 @@ dependencies = [
  "integrity-verify",
  "serde_json",
  "trellis-types",
+ "wos-events",
 ]
 
 [[package]]

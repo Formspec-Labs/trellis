@@ -88,6 +88,34 @@ class TestCheckHttpApiSchema(unittest.TestCase):
             msg=errors,
         )
 
+    def test_given_openapi_operation_id_drift_when_check_openapi_operations_then_error_emitted(
+        self,
+    ) -> None:
+        schema = {
+            "x-trellis-http-api": {
+                "operations": [
+                    {
+                        "operationId": "appendEvent",
+                        "method": "POST",
+                        "path": "/v1/scopes/{scope}/events",
+                    }
+                ]
+            }
+        }
+        openapi = {
+            "paths": {
+                "/v1/scopes/{scope}/events": {
+                    "post": {"operationId": "append_event"}
+                }
+            }
+        }
+        errors: list[str] = []
+        self.module.check_openapi_operations(schema, openapi, errors)
+        self.assertTrue(
+            any("OpenAPI operationId mismatch" in error for error in errors),
+            msg=errors,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

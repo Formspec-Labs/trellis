@@ -940,7 +940,7 @@ async fn openapi_json() -> Result<Json<serde_json::Value>, StackError> {
         (status = 503, description = "Substrate dependency unavailable.", body = ProblemJson, content_type = "application/problem+json")
     ),
     tag = "events",
-    operation_id = "append_event",
+    operation_id = "appendEvent",
 )]
 async fn append_event(
     State(state): State<TrellisServerState>,
@@ -990,7 +990,7 @@ async fn append_event(
         (status = 503, description = "Bundle store unavailable.", body = ProblemJson, content_type = "application/problem+json")
     ),
     tag = "bundles",
-    operation_id = "head_bundle",
+    operation_id = "getHeadBundle",
 )]
 async fn head_bundle(
     State(state): State<TrellisServerState>,
@@ -1013,10 +1013,10 @@ async fn head_bundle(
 
 #[utoipa::path(
     get,
-    path = "/v1/scopes/{scope}/bundles/{checkpoint_digest}",
+    path = "/v1/scopes/{scope}/bundles/{checkpointDigest}",
     params(
         ("scope" = String, Path, description = "Trellis ledger scope."),
-        ("checkpoint_digest" = String, Path, description = "Checkpoint digest in `sha256:<64 hex>` form.")
+        ("checkpointDigest" = String, Path, description = "Checkpoint digest in `sha256:<64 hex>` form.")
     ),
     responses(
         (status = 200, description = "Pinned Trellis export bundle.", content_type = "application/zip"),
@@ -1025,7 +1025,7 @@ async fn head_bundle(
         (status = 503, description = "Bundle store unavailable.", body = ProblemJson, content_type = "application/problem+json")
     ),
     tag = "bundles",
-    operation_id = "pinned_bundle",
+    operation_id = "getBundleByCheckpointDigest",
 )]
 async fn pinned_bundle(
     State(state): State<TrellisServerState>,
@@ -1068,7 +1068,7 @@ async fn pinned_bundle(
         (status = 503, description = "Registry unavailable.", body = ProblemJson, content_type = "application/problem+json")
     ),
     tag = "registries",
-    operation_id = "signing_key_registry",
+    operation_id = "getSigningKeyRegistry",
 )]
 async fn signing_key_registry(
     State(state): State<TrellisServerState>,
@@ -1090,7 +1090,7 @@ async fn signing_key_registry(
         (status = 503, description = "Registry unavailable.", body = ProblemJson, content_type = "application/problem+json")
     ),
     tag = "registries",
-    operation_id = "event_type_registry",
+    operation_id = "getEventTypeRegistry",
 )]
 async fn event_type_registry(
     State(state): State<TrellisServerState>,
@@ -2202,7 +2202,7 @@ mod tests {
             ("/openapi.json", "get"),
             ("/v1/scopes/{scope}/events", "post"),
             ("/v1/scopes/{scope}/bundles/head", "get"),
-            ("/v1/scopes/{scope}/bundles/{checkpoint_digest}", "get"),
+            ("/v1/scopes/{scope}/bundles/{checkpointDigest}", "get"),
             ("/v1/scopes/{scope}/registries/signing-keys", "get"),
             ("/v1/scopes/{scope}/registries/event-types", "get"),
         ] {

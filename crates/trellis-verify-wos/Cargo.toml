@@ -9,3 +9,6 @@ ciborium = "0.2"
 serde_json = "1.0"
 trellis-types = { path = "../trellis-types" }
 integrity-verify = { path = "../../../integrity-stack/crates/integrity-verify" }
+
+[dev-dependencies]
+wos-events = { path = "../../../work-spec/crates/wos-events" }
