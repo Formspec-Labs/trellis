@@ -40,8 +40,8 @@ use stack_common_http::idempotency::{
 };
 use stack_common_http::problem_response;
 use stack_common_http::tenant::{
-    extract_tenant, extract_tenant_multi_producer, HeaderConfig, TenantHeaderConfigProvider,
-    TenantScope,
+    HeaderConfig, TenantHeaderConfigProvider, TenantScope, extract_tenant,
+    extract_tenant_multi_producer,
 };
 use stack_common_idempotency::{
     HttpReplayStore, InMemoryHttpReplayStore, ReplayOutcome, StoredResponse,
@@ -52,9 +52,9 @@ use trellis_cddl::canonical_event_hash_preimage;
 use trellis_core::SigningKeyMaterial as CoreSigningKey;
 use trellis_export_writer::{
     ExportWriterInput, RegistrySnapshot as ExportRegistrySnapshot,
-    SigningKeyMaterial as ExportSigningKey,
-    TrellisTimestamp, write_export,
+    SigningKeyMaterial as ExportSigningKey, TrellisTimestamp, write_export,
 };
+use trellis_server_ports::ComputeContext as PortComputeContext;
 use trellis_server_ports::{
     AdmissionEvent, ArtifactRef, ArtifactStore, EventAdmissionPolicy, S3CompatibleArtifactStore,
     S3ObjectConfig, ScopeAction, ScopeAuthorization, ScopeAuthorizer,
@@ -63,7 +63,6 @@ use trellis_service_client::{
     AppendActor, ClientAttestation, ComputeContext, ComputeSensitivity, SubstrateAppendBody,
     SubstrateAppendResult, VerificationReceipt,
 };
-use trellis_server_ports::ComputeContext as PortComputeContext;
 use trellis_types::{EVENT_DOMAIN, StoredEvent};
 use utoipa::{OpenApi, ToSchema};
 use wos_events::{ProvenanceKind, ProvenanceRecord};
@@ -793,11 +792,9 @@ pub async fn state_from_env() -> Result<TrellisServerState, StackError> {
         ))
     })?;
     let signing_key_valid_to = env_optional_timestamp("TRELLIS_SIGNING_KEY_VALID_TO_UNIX_SECS")?;
-    let signing_key = ServerSigningKey::from_cose_key_bytes(
-        signing_key_bytes,
-        TrellisTimestamp::new(0, 0)?,
-    )?
-    .with_valid_to(signing_key_valid_to);
+    let signing_key =
+        ServerSigningKey::from_cose_key_bytes(signing_key_bytes, TrellisTimestamp::new(0, 0)?)?
+            .with_valid_to(signing_key_valid_to);
 
     let tenant_header_mode = match env::var("TRELLIS_TENANT_HEADER_SET")
         .unwrap_or_else(|_| "mixed".to_string())
@@ -894,12 +891,7 @@ impl HealthProbe for TrellisHealthProbe {
         }
         let probe_key = "__healthz__/artifact-roundtrip";
         let probe_bytes = b"trellis-health-probe";
-        match self
-            .state
-            .artifact_store
-            .put(probe_key, probe_bytes)
-            .await
-        {
+        match self.state.artifact_store.put(probe_key, probe_bytes).await {
             Ok(artifact_ref) => match self.state.artifact_store.get(&artifact_ref).await {
                 Ok(Some(bytes)) if bytes == probe_bytes => {}
                 Ok(Some(_)) => issues.push("artifact-store: roundtrip bytes mismatch".into()),
@@ -909,10 +901,7 @@ impl HealthProbe for TrellisHealthProbe {
             Err(error) => issues.push(format!("artifact-store write: {error}")),
         }
         if issues.is_empty() {
-            ComponentHealth::healthy(
-                "trellis-server",
-                "repository and artifact store reachable",
-            )
+            ComponentHealth::healthy("trellis-server", "repository and artifact store reachable")
         } else {
             ComponentHealth::degraded("trellis-server", issues.join("; "))
         }
@@ -1439,7 +1428,10 @@ fn event_type_registry_cbor() -> Result<Vec<u8>, StackError> {
     }
     let formspec_entry = text_map(vec![
         ("privacy_class", Value::Text("publicMetadata".to_string())),
-        ("binding_family", Value::Text("formspec.response".to_string())),
+        (
+            "binding_family",
+            Value::Text("formspec.response".to_string()),
+        ),
     ])?;
     event_types.push((
         Value::Text(FORMSPEC_RESPONSE_SUBMITTED.to_string()),
@@ -1468,9 +1460,7 @@ fn signing_key_registry_cbor(signing_key: &ExportSigningKey) -> Result<Vec<u8>, 
         ("valid_from", timestamp_value(signing_key.valid_from)),
         (
             "valid_to",
-            signing_key
-                .valid_to
-                .map_or(Value::Null, timestamp_value),
+            signing_key.valid_to.map_or(Value::Null, timestamp_value),
         ),
         ("supersedes", Value::Null),
         ("attestation", Value::Null),
@@ -1603,8 +1593,7 @@ mod tests {
     /// Given a ledger idempotency replay, when the coordinator runs again with the
     /// same key, then admission runs once per pass and the sequence is unchanged.
     #[tokio::test]
-    async fn given_ledger_idempotency_replay_when_coordinator_runs_then_admission_once_per_pass(
-    ) {
+    async fn given_ledger_idempotency_replay_when_coordinator_runs_then_admission_once_per_pass() {
         let admission_calls = Arc::new(AtomicUsize::new(0));
         let inner = Arc::new(RoutedEventAdmissionPolicy {
             wos: WosEventAdmissionPolicy,
@@ -1615,8 +1604,8 @@ mod tests {
             calls: admission_calls.clone(),
         });
         let state = test_state().with_admission_policy(counting);
-        let body: SubstrateAppendBody = serde_json::from_slice(&append_body("idem-coordinator-replay"))
-            .unwrap();
+        let body: SubstrateAppendBody =
+            serde_json::from_slice(&append_body("idem-coordinator-replay")).unwrap();
         let command = append::AppendCommand {
             scope: "case_123".to_string(),
             event_type: body.event_type.clone(),
@@ -1644,7 +1633,8 @@ mod tests {
         );
         assert_eq!(second.result.sequence, first.result.sequence);
         assert_eq!(
-            second.result.canonical_event_hash, first.result.canonical_event_hash
+            second.result.canonical_event_hash,
+            first.result.canonical_event_hash
         );
     }
 
@@ -1673,8 +1663,7 @@ mod tests {
     /// Given a Formspec aggregate append, when admission runs, then the event is
     /// accepted and the receipt carries Formspec profile id 2.
     #[tokio::test]
-    async fn given_formspec_response_submitted_when_appended_then_profile_id_is_formspec(
-    ) {
+    async fn given_formspec_response_submitted_when_appended_then_profile_id_is_formspec() {
         let app = router(test_state()).expect("router");
         let response = app
             .oneshot(formspec_post_request(
@@ -1698,8 +1687,7 @@ mod tests {
     }
 
     #[test]
-    fn given_signing_key_with_valid_to_when_registry_cbor_built_then_valid_to_is_encoded(
-    ) {
+    fn given_signing_key_with_valid_to_when_registry_cbor_built_then_valid_to_is_encoded() {
         let valid_from = TrellisTimestamp::new(1_700_000_000, 0).expect("valid from");
         let valid_to = TrellisTimestamp::new(1_800_000_000, 0).expect("valid to");
         let key_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1739,7 +1727,9 @@ mod tests {
 
     #[test]
     fn given_corrupt_export_zip_when_verified_then_returns_false() {
-        assert!(!export_bundle_cryptographically_verified(b"not-a-valid-export-zip"));
+        assert!(!export_bundle_cryptographically_verified(
+            b"not-a-valid-export-zip"
+        ));
     }
 
     #[tokio::test]
@@ -1777,6 +1767,34 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
+    /// Inactive signing key (`valid_to` before wall-clock time) rejects append with BAD_REQUEST via
+    /// `AppendCoordinator`; temporarily removing its `is_active_at` guard turns this case RED (201).
+    #[tokio::test]
+    async fn given_expired_signing_key_when_http_append_then_bad_request() {
+        let key_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/vectors/_keys/issuer-001.cose_key");
+        let key = fs::read(key_path).expect("fixture key");
+        let valid_from = TrellisTimestamp::new(1_600_000_000, 0).expect("valid from");
+        let valid_to = TrellisTimestamp::new(1_700_000_010, 0).expect("valid to");
+        let signing_key = ServerSigningKey::from_cose_key_bytes(key, valid_from)
+            .expect("parse signing key")
+            .with_valid_to(Some(valid_to));
+        let state = TrellisServerState::new(
+            Arc::new(InMemoryEventRepository::new()),
+            signing_key,
+            TenantHeaderMode::MultiProducer,
+        );
+        let app = router(state).expect("router");
+        let response = app
+            .oneshot(post_request(
+                "/v1/scopes/case_123/events",
+                append_body("idem-expired-signing-key"),
+            ))
+            .await
+            .expect("append response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
     #[test]
     fn openapi_append_contract_matches_json_schema() {
         let schema_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1795,8 +1813,7 @@ mod tests {
         for event_type in schema_events {
             let literal = event_type.as_str().expect("event type literal");
             assert!(
-                WOS_EVENT_TYPES.contains(&literal)
-                    || literal == FORMSPEC_RESPONSE_SUBMITTED,
+                WOS_EVENT_TYPES.contains(&literal) || literal == FORMSPEC_RESPONSE_SUBMITTED,
                 "schema EventType enum must only list admitted server literals"
             );
         }
@@ -1857,7 +1874,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn given_same_scope_and_events_when_bundle_published_twice_then_zip_bytes_are_identical() {
+    async fn given_same_scope_and_events_when_bundle_published_twice_then_zip_bytes_are_identical()
+    {
         let state = test_state();
         let app = router(state.clone()).expect("router");
         let response = app
@@ -1906,11 +1924,7 @@ mod tests {
         impl ArtifactStore for FailingArtifactStore {
             type Error = StackError;
 
-            async fn put(
-                &self,
-                _key: &str,
-                _bytes: &[u8],
-            ) -> Result<ArtifactRef, Self::Error> {
+            async fn put(&self, _key: &str, _bytes: &[u8]) -> Result<ArtifactRef, Self::Error> {
                 Err(StackError::unavailable("artifact store offline"))
             }
 
@@ -1928,6 +1942,37 @@ mod tests {
             health.status,
             stack_common_ops::ComponentStatus::Degraded,
             "unreachable artifact store must degrade readiness: {health:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn given_repository_list_scope_unreachable_when_health_probe_runs_then_reports_degraded()
+    {
+        struct FailingEventRepository;
+
+        #[async_trait]
+        impl EventRepository for FailingEventRepository {
+            async fn list_scope(&self, _scope: &[u8]) -> Result<Vec<StoredEvent>, StackError> {
+                Err(StackError::unavailable(
+                    "repository list_scope unreachable for test probe",
+                ))
+            }
+
+            async fn append_event(&self, _event: StoredEvent) -> Result<(), StackError> {
+                Err(StackError::internal("append not exercised in probe test"))
+            }
+        }
+
+        let state = TrellisServerState::new(
+            Arc::new(FailingEventRepository),
+            test_signing_key(),
+            TenantHeaderMode::MultiProducer,
+        );
+        let health = TrellisHealthProbe::new(state).check().await;
+        assert_eq!(
+            health.status,
+            stack_common_ops::ComponentStatus::Degraded,
+            "repository probe failure must degrade readiness: {health:?}"
         );
     }
 
@@ -2060,16 +2105,18 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
-    fn test_state() -> TrellisServerState {
+    fn test_signing_key() -> ServerSigningKey {
         let key_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/vectors/_keys/issuer-001.cose_key");
         let key = fs::read(key_path).expect("fixture key");
-        let signing_key =
-            ServerSigningKey::from_cose_key_bytes(key, TrellisTimestamp::new(0, 0).unwrap())
-                .expect("signing key");
+        ServerSigningKey::from_cose_key_bytes(key, TrellisTimestamp::new(0, 0).unwrap())
+            .expect("signing key")
+    }
+
+    fn test_state() -> TrellisServerState {
         TrellisServerState::new(
             Arc::new(InMemoryEventRepository::new()),
-            signing_key,
+            test_signing_key(),
             TenantHeaderMode::MultiProducer,
         )
     }

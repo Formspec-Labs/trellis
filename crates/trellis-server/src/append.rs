@@ -1,17 +1,17 @@
 // Rust guideline compliant 2026-05-15
 //! Append orchestration: admission, scope lock, core append, persistence, bundle publish.
 
-use integrity_cbor::{Value, domain_separated_sha256, json_to_dcbor_bytes};
 use hkdf::Hkdf;
+use integrity_cbor::{Value, domain_separated_sha256, json_to_dcbor_bytes};
 use sha2::{Digest, Sha256};
 use stack_common_error::StackError;
 use trellis_core::{AuthoredEvent, LedgerStore};
+use trellis_export_writer::PostureDeclaration as ExportPostureDeclaration;
 use trellis_export_writer::TrellisTimestamp;
 use trellis_server_ports::{
     AdmissionEvent, AppendUnitOfWork, ComputeContext as PortComputeContext,
     ComputeSensitivity as PortComputeSensitivity,
 };
-use trellis_export_writer::PostureDeclaration as ExportPostureDeclaration;
 use trellis_service_client::{ComputeSensitivity, SubstrateAppendBody, SubstrateAppendResult};
 use trellis_types::{CONTENT_DOMAIN, StoredEvent};
 
@@ -72,21 +72,19 @@ impl<'a> AppendCoordinator<'a> {
             })
             .await?;
 
-        let _scope_guard = self
-            .state
-            .scope_locks
-            .lock(command.scope.as_bytes())
-            .await;
+        let _scope_guard = self.state.scope_locks.lock(command.scope.as_bytes()).await;
         let mut events = self
             .state
             .repository
             .list_scope(command.scope.as_bytes())
             .await?;
-        let content = EventContent::from_payload(&command.payload, command.idempotency_key.as_bytes())?;
+        let content =
+            EventContent::from_payload(&command.payload, command.idempotency_key.as_bytes())?;
 
-        if let Some(existing) = events.iter().find(|event| {
-            event.idempotency_key() == Some(command.idempotency_key.as_bytes())
-        }) {
+        if let Some(existing) = events
+            .iter()
+            .find(|event| event.idempotency_key() == Some(command.idempotency_key.as_bytes()))
+        {
             validate_existing_replay(existing, &command.event_type, content.content_hash)?;
             let replay_events = events
                 .iter()
@@ -108,7 +106,10 @@ impl<'a> AppendCoordinator<'a> {
                 &bundle,
                 true,
             )?;
-            return Ok(AppendOutcome { result, stored: existing.clone() });
+            return Ok(AppendOutcome {
+                result,
+                stored: existing.clone(),
+            });
         }
 
         let sequence = u64::try_from(events.len())
@@ -127,12 +128,11 @@ impl<'a> AppendCoordinator<'a> {
             authored_at: now_timestamp()?,
         })?;
         let mut capture = CapturingLedgerStore::default();
-        let artifacts = trellis_core::append_event(
-            &mut capture,
-            &self.state.signing_key.core_key(),
-            &authored,
-        )
-        .map_err(|error| StackError::bad_request(format!("trellis append rejected: {error}")))?;
+        let artifacts =
+            trellis_core::append_event(&mut capture, &self.state.signing_key.core_key(), &authored)
+                .map_err(|error| {
+                    StackError::bad_request(format!("trellis append rejected: {error}"))
+                })?;
         let stored = capture
             .take()
             .ok_or_else(|| StackError::internal("trellis core did not emit a stored event"))?
@@ -199,7 +199,9 @@ pub fn export_posture_from_compute(compute: &PortComputeContext) -> ExportPostur
 #[must_use]
 pub fn port_compute_context(body: &SubstrateAppendBody) -> PortComputeContext {
     let sensitivity = match body.compute_context.sensitivity {
-        ComputeSensitivity::PublicMetadata => trellis_server_ports::ComputeSensitivity::PublicMetadata,
+        ComputeSensitivity::PublicMetadata => {
+            trellis_server_ports::ComputeSensitivity::PublicMetadata
+        }
         ComputeSensitivity::ProviderReadable => {
             trellis_server_ports::ComputeSensitivity::ProviderReadable
         }
@@ -221,7 +223,10 @@ struct EventContent {
 }
 
 impl EventContent {
-    fn from_payload(payload: &serde_json::Value, idempotency_key: &[u8]) -> Result<Self, StackError> {
+    fn from_payload(
+        payload: &serde_json::Value,
+        idempotency_key: &[u8],
+    ) -> Result<Self, StackError> {
         let payload_bytes = json_to_dcbor_bytes(payload, &[]).map_err(|error| {
             StackError::bad_request(format!("payload CBOR encode failed: {error}"))
         })?;
@@ -342,18 +347,16 @@ impl LedgerStore for CapturingLedgerStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use trellis_export_writer::TrellisTimestamp;
     use crate::ServerSigningKey;
+    use trellis_export_writer::TrellisTimestamp;
 
     fn fixture_payload_path() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/vectors/_inputs/sample-payload-001.bin")
     }
 
-    const APPEND_041_NONCE: [u8; 12] =
-        *b"\xf2\x48\x1a\xd5\x81\x21\x4d\xf8\xe6\xda\x32\x54";
-    const APPEND_042_NONCE: [u8; 12] =
-        *b"\x90\xe4\x69\x49\xe5\x04\xf6\xce\xa0\x08\x55\x4b";
+    const APPEND_041_NONCE: [u8; 12] = *b"\xf2\x48\x1a\xd5\x81\x21\x4d\xf8\xe6\xda\x32\x54";
+    const APPEND_042_NONCE: [u8; 12] = *b"\x90\xe4\x69\x49\xe5\x04\xf6\xce\xa0\x08\x55\x4b";
 
     #[test]
     fn given_provider_readable_compute_when_mapped_then_delegated_compute_is_true() {
@@ -382,7 +385,8 @@ mod tests {
     }
 
     #[test]
-    fn given_same_payload_and_different_idempotency_keys_when_deriving_inline_nonce_then_nonces_differ() {
+    fn given_same_payload_and_different_idempotency_keys_when_deriving_inline_nonce_then_nonces_differ()
+     {
         let payload = serde_json::json!({
             "kind": "test.event",
             "value": 42
@@ -432,12 +436,9 @@ mod tests {
         let key_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/vectors/_keys/issuer-001.cose_key");
         let key = std::fs::read(key_path).expect("fixture key");
-        let signing_key = ServerSigningKey::from_cose_key_bytes(
-            key,
-            valid_from,
-        )
-        .expect("parse signing key")
-        .with_valid_to(Some(valid_to));
+        let signing_key = ServerSigningKey::from_cose_key_bytes(key, valid_from)
+            .expect("parse signing key")
+            .with_valid_to(Some(valid_to));
         let check_time = TrellisTimestamp::new(1_700_000_100, 0).expect("check time");
         assert!(
             !signing_key.is_active_at(check_time),
