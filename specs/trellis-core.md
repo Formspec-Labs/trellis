@@ -82,6 +82,8 @@ This stack uses three nested scopes of append-only structure. Every requirement 
 
 Throughout this document, "ledger" is always qualified by scope. "Log" is reserved for structures whose entries are other ledgers' heads. All five are Trellis-shaped: same envelope, same hash, same signing profile, different scopes.
 
+For governed Formspec/WOS deployments, one Trellis ledger per case is a first-class Phase 1 deployment pattern: the Phase 1 event and checkpoint formats above are sufficient for a case scope today. Response ledgers remain a tributary pattern for non-governed or response-local use, and may be composed into a case ledger per §22.4. Phase labels name additional composition and witnessing features; they do not imply a different case-ledger wire shape. Traceability: **TR-CORE-080**.
+
 ### 1.3 Non-goals
 
 This specification does not define:
@@ -783,6 +785,8 @@ where `plaintext_payload` is the exact payload bytes to be encrypted. This const
 
 A Canonical Append Service MAY memoize the ciphertext per `(ledger_scope, idempotency_key)` as an implementation optimization, but memoization is not normative; the deterministic derivation alone is sufficient to guarantee retry byte identity. A verifier does not re-derive or validate the nonce; the rule is a producer obligation that makes the idempotency contract (§17.3) decidable without mutable state.
 
+**Private-payload protection floor.** A Fact Producer MUST NOT append plaintext content for a private payload class declared `reader_held` or `provider_readable = false` in the active Posture Declaration (§20). Public metadata MAY remain public only where Trellis defines it as public metadata; private or user content MUST be represented by protected ciphertext and payload references. The §9.4 fixture carve-out below is structural-only: it permits pinned ephemeral keys so HPKE test vectors can reproduce byte-for-byte; it is not a plaintext durable-bundle deployment profile. Traceability: **TR-CORE-034**.
+
 Traceability: **TR-CORE-144** (matrix row).
 
 Every `KeyBagEntry` (hereafter "wrap") MUST use a fresh X25519 ephemeral keypair, unique across every wrap in the containing ledger scope. For the avoidance of doubt: in an event with N recipients the `key_bag` contains N `KeyBagEntry` rows with N distinct `ephemeral_pubkey` values, generated from N distinct ephemeral private keys; no `ephemeral_pubkey` value produced by any author in any event in the same ledger scope may recur in any later event. The `ephemeral_pubkey` is persisted in the envelope so the recipient can perform ECDH; the corresponding ephemeral private key MUST be used exactly once and destroyed after the wrap is sealed. Reusing an ephemeral private key across wraps, within the same event, across events in the same ledger scope, or across ledger scopes, is a non-conformance.
@@ -868,7 +872,7 @@ Phase 1 reserves these domain tags. An implementation MUST NOT use any of these 
 - `trellis-merkle-interior-v1` — Merkle interior-node hash (§11.3)
 - `trellis-posture-declaration-v1` — Posture-declaration document digest referenced from custody-model and disclosure-profile Posture-transition events (§6.7 registered extensions; Companion §10)
 - `trellis-transition-attestation-v1` — Posture-transition attestation signature preimage `dCBOR([transition_id, effective_at, authority_class])` per Companion A.5 `Attestation` shared rule
-- `trellis-presentation-artifact-v1` — SHA-256 preimage for `PresentationArtifact.content_hash` carried by `trellis.certificate-of-completion.v1` events (ADR 0007). Domain-separates the rendered PDF / HTML bytes from event-payload, content, checkpoint, and Merkle-tree hashing.
+- `trellis-presentation-artifact-v1` — SHA-256 preimage for rendered presentation artifacts, including `PresentationArtifact.content_hash` carried by `trellis.certificate-of-completion.v1` events (ADR 0007) and WOS `SignatureAffirmationInput.presentationHash` when a signing attestation references a rendered document. Domain-separates PDF / HTML presentation bytes from event-payload, content, checkpoint, and Merkle-tree hashing.
 - `trellis-user-content-attestation-v1` — Ed25519 signature preimage for `UserContentAttestationPayload.signature` carried by `trellis.user-content-attestation.v1` events (ADR 0010). Inner preimage is `dCBOR([attestation_id, attested_event_hash, attested_event_position, attestor, identity_attestation_ref, signing_intent, attested_at])`. Distinct from `trellis-transition-attestation-v1` so a wrongly-typed user-content attestation cannot cross-validate against the operator-actor posture-transition family, and vice versa.
 - `trellis-wos-preledger-idempotency-v1` — SHA-256 preimage for WOS direct case-ledger creation before the case ledger exists. Inner preimage is `dCBOR({ "tenant": tenant, "idempotency_token": token })`, with `tenant` and `token` supplied by the WOS boundary operation that emits `wos.kernel.case_created`. Distinct from the custody-hook `trellis-wos-idempotency-v1` tag, whose WOS-owned input is `(caseId, recordId)`.
 
@@ -3430,7 +3434,7 @@ Core traceability rows:
 - TR-CORE-001, TR-CORE-002, TR-CORE-003, TR-CORE-004, TR-CORE-005, TR-CORE-006, TR-CORE-007
 - TR-CORE-010, TR-CORE-011, TR-CORE-012, TR-CORE-013, TR-CORE-014, TR-CORE-015, TR-CORE-016, TR-CORE-017
 - TR-CORE-020, TR-CORE-021, TR-CORE-022, TR-CORE-023, TR-CORE-024, TR-CORE-025
-- TR-CORE-030, TR-CORE-031, TR-CORE-032, TR-CORE-033, TR-CORE-035, TR-CORE-036, TR-CORE-037, TR-CORE-038
+- TR-CORE-030, TR-CORE-031, TR-CORE-032, TR-CORE-033, TR-CORE-034, TR-CORE-035, TR-CORE-036, TR-CORE-037, TR-CORE-038
 - TR-CORE-040, TR-CORE-041, TR-CORE-042, TR-CORE-043, TR-CORE-044, TR-CORE-045, TR-CORE-046
 - TR-CORE-050, TR-CORE-051, TR-CORE-052, TR-CORE-053
 - TR-CORE-060, TR-CORE-061, TR-CORE-062, TR-CORE-063, TR-CORE-064, TR-CORE-065, TR-CORE-066, TR-CORE-067
