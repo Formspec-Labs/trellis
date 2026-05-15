@@ -7,6 +7,7 @@ members = [
     "crates/trellis-core",
     "crates/trellis-server-ports",
     "crates/trellis-export-writer",
+    "crates/trellis-service-client",
     "crates/trellis-verify",
     "crates/trellis-verify-wos",
     "crates/trellis-witness-registry",
