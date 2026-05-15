@@ -721,7 +721,7 @@ mod tests {
             assert_eq!(value["computeContext"]["sensitivity"], "publicMetadata");
             response(
                 "application/json",
-                r#"{"eventId":"evt_1","sequence":7,"canonicalEventHash":"sha256:abc","checkpointRef":"trellis://case_123/checkpoints/cp_1","bundleRef":"s3://bucket/bundle.zip","verificationReceipt":{"verified":true,"profileId":2,"eventType":"wos.kernel.case_created"}}"#,
+                r#"{"eventId":"evt_1","sequence":7,"canonicalEventHash":"sha256:abc","checkpointRef":"trellis://case_123/checkpoints/cp_1","bundleRef":"s3://bucket/bundle.zip","verificationReceipt":{"verified":true,"profileId":1,"eventType":"wos.kernel.case_created"}}"#,
             )
         });
         let client = TrellisServiceClient::new(TrellisServiceClientConfig::new(
@@ -781,7 +781,7 @@ mod tests {
             bundle_ref: "s3://bucket/bundle.zip".to_string(),
             verification_receipt: VerificationReceipt {
                 verified: false,
-                profile_id: 2,
+                profile_id: 1,
                 event_type: "wos.kernel.case_created".to_string(),
             },
         };

@@ -82,6 +82,7 @@ pub struct SigningKeyMaterial {
     pub private_seed: [u8; 32],
     pub public_key: [u8; 32],
     pub valid_from: TrellisTimestamp,
+    pub valid_to: Option<TrellisTimestamp>,
 }
 
 impl SigningKeyMaterial {
@@ -545,7 +546,12 @@ fn signing_key_registry_cbor(signing_key: &SigningKeyMaterial) -> Result<Vec<u8>
         ("suite_id", uint(SUITE_ID_PHASE_1)),
         ("status", uint(0)),
         ("valid_from", signing_key.valid_from.to_value()),
-        ("valid_to", Value::Null),
+        (
+            "valid_to",
+            signing_key
+                .valid_to
+                .map_or(Value::Null, TrellisTimestamp::to_value),
+        ),
         ("supersedes", Value::Null),
         ("attestation", Value::Null),
     ])?;
@@ -1122,6 +1128,7 @@ mod tests {
                 private_seed,
                 public_key,
                 valid_from: TrellisTimestamp::new(1_745_000_000, 0).expect("valid timestamp"),
+                valid_to: None,
             },
             generator: "x-trellis-test/export-generator-001".to_string(),
             generated_at: TrellisTimestamp::new(1_745_000_060, 0).expect("valid timestamp"),
@@ -1213,6 +1220,7 @@ mod tests {
                 private_seed: [0; 32],
                 public_key: [1; 32],
                 valid_from: TrellisTimestamp::new(1, 0).expect("valid timestamp"),
+                valid_to: None,
             },
             generator: "test".to_string(),
             generated_at: TrellisTimestamp::new(1, 0).expect("valid timestamp"),
