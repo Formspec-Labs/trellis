@@ -50,8 +50,8 @@ use trellis_export_writer::{
     TrellisTimestamp, write_export,
 };
 use trellis_server_ports::{
-    AdmissionEvent, ArtifactRef, ArtifactStore, EventAdmissionPolicy, ScopeAction,
-    ScopeAuthorization, ScopeAuthorizer,
+    AdmissionEvent, ArtifactRef, ArtifactStore, EventAdmissionPolicy, S3CompatibleArtifactStore,
+    S3ObjectConfig, ScopeAction, ScopeAuthorization, ScopeAuthorizer,
 };
 use trellis_service_client::{
     ComputeSensitivity as WireComputeSensitivity, SubstrateAppendBody, SubstrateAppendResult,
@@ -581,6 +581,10 @@ pub fn router(state: TrellisServerState) -> Result<Router, StackError> {
 /// Optional:
 /// - `TRELLIS_TENANT_HEADER_SET=wos|formspec`
 /// - `TRELLIS_JWT_HS256_SECRET`
+/// - `TRELLIS_ARTIFACT_BUCKET`
+/// - `TRELLIS_ARTIFACT_PREFIX`
+/// - `TRELLIS_ARTIFACT_ENDPOINT`
+/// - `TRELLIS_ARTIFACT_REGION`
 ///
 /// # Errors
 /// Returns an error when config is missing or backend setup fails.
@@ -625,6 +629,9 @@ pub async fn state_from_env() -> Result<TrellisServerState, StackError> {
     };
 
     let mut state = TrellisServerState::new(repository, signing_key, tenant_headers);
+    if let Some(artifact_store) = artifact_store_from_env() {
+        state = state.with_artifact_store(artifact_store);
+    }
     if let Ok(secret) = env::var("TRELLIS_JWT_HS256_SECRET") {
         let config = JwtConfig {
             algorithm: jsonwebtoken::Algorithm::HS256,
@@ -636,6 +643,24 @@ pub async fn state_from_env() -> Result<TrellisServerState, StackError> {
         state = state.with_jwt_verifier(JwtVerifier::from_hs256(config, secret.as_bytes()));
     }
     Ok(state)
+}
+
+fn artifact_store_from_env() -> Option<Arc<dyn ArtifactStore<Error = StackError>>> {
+    let bucket = env_optional("TRELLIS_ARTIFACT_BUCKET")?;
+    let prefix = env_optional("TRELLIS_ARTIFACT_PREFIX").unwrap_or_else(|| "trellis".to_string());
+    let config = S3ObjectConfig {
+        bucket,
+        endpoint: env_optional("TRELLIS_ARTIFACT_ENDPOINT"),
+        region: env_optional("TRELLIS_ARTIFACT_REGION"),
+    };
+    Some(Arc::new(S3CompatibleArtifactStore::new(config, prefix)))
+}
+
+fn env_optional(name: &str) -> Option<String> {
+    env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 #[derive(Clone, Copy)]
