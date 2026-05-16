@@ -38,13 +38,18 @@ pub fn wos_schema_ref(event_type: &str) -> String {
 
 /// Derives the logical event family from a WOS event literal.
 ///
-/// Family is the literal's first two dotted segments (`wos.kernel`,
-/// `wos.governance`, `wos.ai`, `wos.assurance`, …) so downstream consumers can
-/// route on family without re-parsing each literal. Returns `None` when the
-/// literal does not have at least two dotted segments.
+/// Family is the literal's first two dotted segments under the `wos.` root
+/// (`wos.kernel`, `wos.governance`, `wos.ai`, `wos.assurance`, …) so
+/// downstream consumers can route on family without re-parsing each literal.
+/// Returns `None` for literals not rooted at `wos.` or missing a second
+/// dotted segment — generic catalog projection must dispatch those through
+/// the owning admission adapter rather than falling back here.
 #[must_use]
 pub fn wos_event_family(event_type: &str) -> Option<&str> {
     let after_first = event_type.find('.')? + 1;
+    if !event_type[..after_first].eq_ignore_ascii_case("wos.") {
+        return None;
+    }
     let rest = &event_type[after_first..];
     let second = rest.find('.')?;
     Some(&event_type[..after_first + second])
@@ -211,6 +216,19 @@ mod tests {
         );
         assert_eq!(wos_event_family("two_segments_only"), None);
         assert_eq!(wos_event_family("wos.only_one"), None);
+    }
+
+    #[test]
+    fn given_non_wos_literal_when_family_derived_then_returns_none() {
+        // Family inference is strictly bounded to the `wos.` root so a future
+        // adapter (c2pa, did, etc.) does not silently inherit a misleading
+        // family slug from this helper.
+        assert_eq!(wos_event_family("c2pa.assertion.created"), None);
+        assert_eq!(
+            wos_event_family("substrate.append.response_submitted"),
+            None
+        );
+        assert_eq!(wos_event_family("formspec.event.something"), None);
     }
 
     #[tokio::test]

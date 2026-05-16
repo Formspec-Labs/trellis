@@ -1,11 +1,13 @@
 // Rust guideline compliant 2026-02-21
-//! Scope authorizers and HTTP-edge admission re-exports.
+//! Deployment-volatile scope-authorizer policies.
 //!
 //! Concrete event admission adapters live in `trellis-admission-wos` and
-//! `trellis-admission-formspec`. They are wired through `crate::composition`,
-//! the only Trellis-side module that imports them. This file keeps the
-//! deployment-volatile scope-authorizer policies and re-exports the routed
-//! admission policy for test consumers.
+//! `trellis-admission-formspec`; they are wired through `crate::composition`,
+//! the only Trellis-side module that imports them. After DI-001/DI-002 this
+//! file only carries the scope authorizers (`AllowAllScopeAuthorizer`,
+//! `ScopedAllowlistScopeAuthorizer`) — they remain here because their
+//! posture depends on JWT verifier wiring in `state.rs` rather than on
+//! producer-specific admission vocabulary.
 
 use async_trait::async_trait;
 use axum::http::StatusCode;

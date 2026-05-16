@@ -86,14 +86,17 @@ class TestCheckHttpApiSchema(unittest.TestCase):
             msg=errors,
         )
 
-    def test_given_server_missing_profile_dispatch_when_check_defs_then_error_emitted(
+    def test_given_server_missing_admitted_profile_when_check_defs_then_error_emitted(
         self,
     ) -> None:
-        server_source = self.server_source.replace("profile_id_for_admitted_event", "removed_dispatch")
+        # DI-000/DI-003: assert the new AdmittedEvent.profile_id contract is
+        # present (replaces the deleted profile_id_for_admitted_event check).
+        server_source = self.server_source.replace("AdmittedEvent", "RetiredEnvelope")
+        server_source = server_source.replace("profile_id: ProfileId", "profile_id: u64")
         errors: list[str] = []
         self.module.check_defs(self.schema, server_source, self.client_source, errors)
         self.assertTrue(
-            any("profile_id_for_admitted_event dispatch" in error for error in errors),
+            any("AdmittedEvent.profile_id" in error for error in errors),
             msg=errors,
         )
 

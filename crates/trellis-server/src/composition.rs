@@ -80,25 +80,43 @@ pub fn default_event_type_specs() -> Vec<EventTypeSpec> {
 /// Generic Trellis catalog projection consumes this so the catalog binding-
 /// family column never re-parses literals on its own. The function is only
 /// defined for literals produced by [`default_event_type_specs`] (i.e. WOS or
-/// Formspec admission). Passing any other literal is a programmer error and
-/// panics — surfacing the registration gap loudly at test time rather than
-/// silently emitting a misleading family.
+/// Formspec admission). Unregistered literals are surfaced as
+/// [`BindingFamilyError`] so the caller can fail the projection cleanly
+/// instead of crashing the process.
 ///
-/// # Panics
-/// Panics when `event_type` is not registered by any admission adapter.
-#[must_use]
-pub fn binding_family_for(event_type: &str) -> String {
+/// # Errors
+/// Returns [`BindingFamilyError::Unregistered`] when `event_type` has no
+/// admission adapter responsible for it.
+pub fn binding_family_for(event_type: &str) -> Result<String, BindingFamilyError> {
     if event_type == FORMSPEC_RESPONSE_SUBMITTED {
-        return FORMSPEC_EVENT_FAMILY.to_string();
+        return Ok(FORMSPEC_EVENT_FAMILY.to_string());
     }
     if let Some(family) = wos_event_family(event_type) {
-        return family.to_string();
+        return Ok(family.to_string());
     }
-    panic!(
-        "binding family for `{event_type}` must come from a registered admission adapter; \
-         catalog projection received an unregistered literal"
-    );
+    Err(BindingFamilyError::Unregistered(event_type.to_string()))
 }
+
+/// Errors raised when [`binding_family_for`] cannot resolve a literal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BindingFamilyError {
+    /// The literal is not registered by any admission adapter in this stack.
+    Unregistered(String),
+}
+
+impl std::fmt::Display for BindingFamilyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unregistered(literal) => write!(
+                f,
+                "binding family for `{literal}` must come from a registered admission adapter; \
+                 catalog projection received an unregistered literal"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BindingFamilyError {}
 
 #[cfg(test)]
 mod tests {
@@ -146,11 +164,25 @@ mod tests {
 
     #[test]
     fn given_binding_family_when_resolved_then_distinguishes_namespaces() {
-        assert_eq!(binding_family_for("wos.kernel.case_created"), "wos.kernel");
         assert_eq!(
-            binding_family_for("wos.governance.amendment_authorized"),
+            binding_family_for("wos.kernel.case_created").expect("known wos"),
+            "wos.kernel"
+        );
+        assert_eq!(
+            binding_family_for("wos.governance.amendment_authorized").expect("known governance"),
             "wos.governance"
         );
-        assert_eq!(binding_family_for(FORMSPEC_RESPONSE_SUBMITTED), "formspec.response");
+        assert_eq!(
+            binding_family_for(FORMSPEC_RESPONSE_SUBMITTED).expect("known formspec"),
+            "formspec.response"
+        );
+    }
+
+    #[test]
+    fn given_unregistered_literal_when_resolved_then_returns_error() {
+        let err = binding_family_for("c2pa.assertion.created")
+            .expect_err("unregistered literal must fail");
+        assert!(matches!(err, BindingFamilyError::Unregistered(ref literal) if literal == "c2pa.assertion.created"));
+        assert!(err.to_string().contains("c2pa.assertion.created"));
     }
 }

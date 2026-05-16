@@ -124,33 +124,23 @@ def parse_substrate_event_literals_from_kind_rs(kind_source: str) -> list[str]:
     return literals
 
 
-def parse_wos_event_types(server_source: str) -> list[str]:
-    """Resolve admitted WOS event-type literals for schema drift checks."""
-    inline = re.search(
-        r"const\s+WOS_EVENT_TYPES:\s*&\[&str\]\s*=\s*&\[(?P<body>.*?)\]\s*;",
-        server_source,
-        flags=re.S,
-    )
-    if inline:
-        found = re.findall(r'"([^"]+)"', inline.group("body"))
-        if found:
-            return found
+def parse_wos_event_types(_server_source: str) -> list[str]:
+    """Resolve admitted WOS event-type literals for schema drift checks.
 
-    if re.search(
-        r"const\s+WOS_EVENT_TYPES:\s*&\[&str\]\s*=\s*SUBSTRATE_CANONICAL_EVENT_LITERALS\s*;",
-        server_source,
-    ):
-        if not WOS_EVENTS_KIND_PATH.is_file():
-            raise ValueError(
-                "trellis-server aliases WOS_EVENT_TYPES to SUBSTRATE_CANONICAL_EVENT_LITERALS "
-                f"but kind.rs not found at {WOS_EVENTS_KIND_PATH} "
-                "(expected stack checkout with sibling work-spec/)"
-            )
-        return parse_substrate_event_literals_from_kind_rs(
-            WOS_EVENTS_KIND_PATH.read_text(encoding="utf-8")
+    After Trellis DI-001 the in-server `WOS_EVENT_TYPES` alias is gone;
+    the canonical literal table lives in `wos-events::SUBSTRATE_CANONICAL_EVENT_LITERALS`
+    and is re-exported by `trellis-admission-wos::WOS_CANONICAL_EVENT_LITERALS`.
+    Schema drift checks parse the literals directly from the
+    `define_canonical_substrate_events!` macro in `kind.rs`.
+    """
+    if not WOS_EVENTS_KIND_PATH.is_file():
+        raise ValueError(
+            "wos-events canonical literal table not found at "
+            f"{WOS_EVENTS_KIND_PATH} (expected stack checkout with sibling work-spec/)"
         )
-
-    raise ValueError("could not find WOS_EVENT_TYPES (inline slice or SUBSTRATE_CANONICAL_EVENT_LITERALS alias)")
+    return parse_substrate_event_literals_from_kind_rs(
+        WOS_EVENTS_KIND_PATH.read_text(encoding="utf-8")
+    )
 
 
 def normalize_axum_path(path: str) -> str:
@@ -272,8 +262,14 @@ def check_defs(schema: dict, server_source: str, client_source: str, errors: lis
             f"expected {registry_version}, got {schema_registry_version}"
         )
 
-    if "profile_id_for_admitted_event" not in server_source:
-        errors.append("trellis-server must define profile_id_for_admitted_event dispatch")
+    # DI-000/DI-003: profile_id_for_admitted_event prefix dispatch is deleted;
+    # the verification profile is sourced from `AdmittedEvent.profile_id` on
+    # the admission contract. Assert the new contract instead.
+    if "profile_id: ProfileId" not in server_source and "AdmittedEvent" not in server_source:
+        errors.append(
+            "trellis-server must consume AdmittedEvent.profile_id (DI-000); "
+            "previous profile_id_for_admitted_event dispatch was retired"
+        )
     schema_profile_id = (
         defs["VerificationReceipt"]
         .get("properties", {})

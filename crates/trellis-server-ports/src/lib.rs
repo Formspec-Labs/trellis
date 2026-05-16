@@ -802,6 +802,13 @@ impl PostureLedger for InMemoryPostureLedger {
 }
 
 /// Registry binding emitted at a known chain sequence.
+///
+/// **Naming note:** Trellis Core spec §14.3 defines a `RegistryBinding` type
+/// in the byte-protocol export envelope that carries
+/// `{registry_digest, registry_format, registry_version, bound_at_sequence}`.
+/// This port-layer `RegistryBinding` is a different shape (service-side
+/// event-type catalog binding for a scope at a sequence); the names overlap
+/// only by coincidence. Do not assume the two structures share a wire shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegistryBinding {
     pub scope: ScopeId,

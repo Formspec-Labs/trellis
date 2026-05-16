@@ -298,7 +298,7 @@
       "properties": {
         "registryVersion": {
           "type": "string",
-          "const": "wos-events:2026-05-15"
+          "const": "trellis-events:2026-05-15"
         },
         "eventTypes": {
           "type": "array",

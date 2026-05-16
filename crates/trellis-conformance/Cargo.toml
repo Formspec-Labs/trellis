@@ -14,14 +14,20 @@ ciborium = "0.2"
 proptest = "1.6"
 sha2 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
 sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+stack-common-error = { path = "../../../stack-common/crates/stack-common-error" }
 stack-common-postgres = { path = "../../../stack-common/crates/stack-common-postgres", default-features = false, features = ["testing"] }
+trellis-admission-formspec = { path = "../trellis-admission-formspec" }
+trellis-admission-wos = { path = "../trellis-admission-wos" }
 trellis-cddl = { path = "../trellis-cddl" }
 integrity-bundle = { path = "../../../integrity-stack/crates/integrity-bundle" }
+integrity-verify = { path = "../../../integrity-stack/crates/integrity-verify" }
+trellis-server-ports = { path = "../trellis-server-ports" }
 trellis-store-postgres-async = { path = "../trellis-store-postgres-async" }
 trellis-types = { path = "../trellis-types" }
 trellis-export-writer = { path = "../trellis-export-writer", features = ["fixture-inputs"] }
-integrity-verify = { path = "../../../integrity-stack/crates/integrity-verify" }
 trellis-verify-wos = { path = "../trellis-verify-wos" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 toml = "0.8"
+wos-events = { path = "../../../work-spec/crates/wos-events" }

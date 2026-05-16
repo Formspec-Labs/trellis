@@ -88,7 +88,10 @@ use crate::openapi::EventTypeRegistryView;
 
 /// Formspec intake proof append event literal admitted at the service edge.
 pub use composition::FORMSPEC_RESPONSE_SUBMITTED;
-const EVENT_TYPE_REGISTRY_VERSION: &str = "wos-events:2026-05-15";
+// Catalog version label is producer-neutral after DI-001/DI-002: the catalog
+// projects both WOS and Formspec admitted literals through `composition`. The
+// old `wos-events:` namespace was misleading once Formspec joined the catalog.
+const EVENT_TYPE_REGISTRY_VERSION: &str = "trellis-events:2026-05-15";
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:8080";
 
 #[must_use]
@@ -395,12 +398,12 @@ fn event_type_registry_cbor() -> Result<Vec<u8>, StackError> {
     const SERVICE_CLASSIFICATION: &str = "x-trellis-service/public-metadata";
     let mut event_types = Vec::new();
     for spec in composition::default_event_type_specs() {
+        let family = composition::binding_family_for(&spec.event_type).map_err(|error| {
+            StackError::internal(format!("event-type catalog projection failed: {error}"))
+        })?;
         let entry = text_map(vec![
             ("privacy_class", Value::Text("publicMetadata".to_string())),
-            (
-                "binding_family",
-                Value::Text(composition::binding_family_for(&spec.event_type)),
-            ),
+            ("binding_family", Value::Text(family)),
         ])?;
         event_types.push((Value::Text(spec.event_type.clone()), entry));
     }
