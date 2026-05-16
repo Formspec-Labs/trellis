@@ -29,8 +29,181 @@ pub type ScopeId = Vec<u8>;
 /// Event type literal admitted at the service edge.
 pub type EventType = String;
 
-/// Schema reference bound to an event type.
-pub type SchemaRef = String;
+/// Validated event-type catalog reference.
+///
+/// Schema references must be non-empty and URI-like (`<scheme>:...`). The
+/// underlying string preserves the original wire spelling for receipts, event-
+/// type catalog projection, and audit logging.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SchemaRef(String);
+
+impl SchemaRef {
+    /// Parses and validates a schema reference.
+    ///
+    /// # Errors
+    /// Returns [`SchemaRefError`] when the input is empty, all whitespace, or
+    /// missing a `<scheme>:` prefix (event-type catalog references must be
+    /// URI-like so generic Trellis code can dispatch on them deterministically).
+    pub fn new(value: impl Into<String>) -> Result<Self, SchemaRefError> {
+        let raw = value.into();
+        if raw.trim().is_empty() {
+            return Err(SchemaRefError::Empty);
+        }
+        let Some((scheme, rest)) = raw.split_once(':') else {
+            return Err(SchemaRefError::MissingScheme);
+        };
+        if scheme.is_empty() || rest.is_empty() {
+            return Err(SchemaRefError::MissingScheme);
+        }
+        Ok(Self(raw))
+    }
+
+    /// Returns the underlying string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consumes the wrapper and returns the underlying string.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for SchemaRef {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SchemaRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Errors raised when constructing a [`SchemaRef`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaRefError {
+    /// The supplied value was empty or whitespace.
+    Empty,
+    /// The supplied value did not have a `<scheme>:` prefix.
+    MissingScheme,
+}
+
+impl std::fmt::Display for SchemaRefError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => f.write_str("schema reference cannot be empty"),
+            Self::MissingScheme => {
+                f.write_str("schema reference must be URI-like (`<scheme>:...`)")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SchemaRefError {}
+
+/// Stable identifier for the verification profile bound to an event family.
+///
+/// Profile ids are bit-identical to the integers serialized in
+/// [`trellis_service_client::VerificationReceipt`] so that wire compatibility
+/// holds across the admission refactor. Generic Trellis service code must use
+/// this value rather than re-parsing event-type prefixes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ProfileId(u64);
+
+impl ProfileId {
+    /// Wraps a profile-id constant from `integrity_verify`.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the underlying u64 used on the wire.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ProfileId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Logical event-family identifier emitted by admission for catalog/projection routing.
+///
+/// Generic Trellis code dispatches on the family rather than the wire literal
+/// so producers can extend the catalog without editing service modules.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EventFamilyId(String);
+
+impl EventFamilyId {
+    /// Builds a family identifier; whitespace-only inputs are rejected.
+    ///
+    /// # Errors
+    /// Returns [`EventFamilyIdError::Empty`] when the input has no
+    /// non-whitespace characters.
+    pub fn new(value: impl Into<String>) -> Result<Self, EventFamilyIdError> {
+        let raw = value.into();
+        if raw.trim().is_empty() {
+            return Err(EventFamilyIdError::Empty);
+        }
+        Ok(Self(raw))
+    }
+
+    /// Returns the underlying string slice.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for EventFamilyId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for EventFamilyId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Errors raised when constructing an [`EventFamilyId`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventFamilyIdError {
+    /// The supplied identifier was empty or whitespace.
+    Empty,
+}
+
+impl std::fmt::Display for EventFamilyIdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => f.write_str("event family id cannot be empty"),
+        }
+    }
+}
+
+impl std::error::Error for EventFamilyIdError {}
+
+/// Whether an event family allows direct (non-service) client submission.
+///
+/// `AuthorizedClientAllowed` is reserved for ADR 0103 / TWREF-0103 direct
+/// client attestation. All admission adapters return [`Self::ServiceOnly`]
+/// until that work lands; current trellis-server still rejects appends that
+/// carry `clientAttestation`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DirectSubmitPolicy {
+    /// Only the service-authorized producer may submit this event family.
+    ServiceOnly,
+    /// A direct, client-attested submission is permitted (ADR 0103 follow-on).
+    AuthorizedClientAllowed,
+}
 
 /// Opaque artifact locator returned by an artifact store.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -275,6 +448,10 @@ pub trait RecipientResolver: Send + Sync {
 }
 
 /// Event payload offered to service-level admission policy.
+///
+/// `AdmissionEvent` deliberately carries only request facts (scope, event-type
+/// literal, payload bytes). Semantic metadata used by generic Trellis code
+/// arrives back through [`AdmittedEvent`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdmissionEvent<'a> {
     pub scope: &'a [u8],
@@ -282,12 +459,40 @@ pub struct AdmissionEvent<'a> {
     pub payload: &'a [u8],
 }
 
+/// Admitted event metadata returned by [`EventAdmissionPolicy`].
+///
+/// Carries the wire literal alongside neutral catalog metadata so receipts,
+/// projection runtimes, and dispatch can consult a single source of truth
+/// without re-parsing event-type prefixes in generic service code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdmittedEvent {
+    /// Wire/audit literal preserved verbatim.
+    pub event_type: EventType,
+    /// Logical event family used for dispatch and catalog routing.
+    pub event_family: EventFamilyId,
+    /// Validated event-type catalog reference.
+    pub schema_ref: SchemaRef,
+    /// Verification profile bound to this event family.
+    pub profile_id: ProfileId,
+    /// Whether direct (non-service) client submission is permitted.
+    pub direct_submit: DirectSubmitPolicy,
+}
+
 /// Service-level event admission policy.
+///
+/// Admission is the source of neutral event metadata downstream consumers use
+/// (receipts, event-type catalog projection, dispatch, authorization). The
+/// returned [`AdmittedEvent`] is the only path that semantic metadata may
+/// enter generic Trellis service code.
 #[async_trait]
 pub trait EventAdmissionPolicy: Send + Sync {
     type Error: std::error::Error + Send + Sync + 'static;
 
-    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<(), Self::Error>;
+    /// Validates the submitted event and emits neutral metadata for the service path.
+    ///
+    /// # Errors
+    /// Returns the implementor's error type when admission rejects the event.
+    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<AdmittedEvent, Self::Error>;
 }
 
 /// Scope action checked by the authorizer.
@@ -643,10 +848,13 @@ impl RegistryBinder for InMemoryRegistryBinder {
         schema_ref: &str,
         bound_at_sequence: u64,
     ) -> Result<RegistryBinding, Self::Error> {
+        let schema_ref = SchemaRef::new(schema_ref.to_string()).unwrap_or_else(|error| {
+            unreachable!("Infallible binder still produced unvalidated schema ref: {error}")
+        });
         let binding = RegistryBinding {
             scope: scope.to_vec(),
             event_type: event_type.to_string(),
-            schema_ref: schema_ref.to_string(),
+            schema_ref,
             bound_at_sequence,
         };
         self.bindings.push(binding.clone());
@@ -904,7 +1112,8 @@ mod tests {
                 .await
                 .expect("resolve")
                 .expect("binding")
-                .schema_ref,
+                .schema_ref
+                .as_str(),
             "schema:v1"
         );
         assert_eq!(
@@ -913,7 +1122,8 @@ mod tests {
                 .await
                 .expect("resolve")
                 .expect("binding")
-                .schema_ref,
+                .schema_ref
+                .as_str(),
             "schema:v2"
         );
     }
@@ -921,11 +1131,12 @@ mod tests {
     #[test]
     fn event_type_registry_requires_budget_review() {
         let mut registry = ReviewGateEventTypeRegistry::default();
+        let schema = SchemaRef::new("schema:v1").expect("valid schema ref");
 
         let err = registry
             .register(EventTypeSpec {
                 event_type: "wos.kernel.case_created".to_string(),
-                schema_ref: "schema:v1".to_string(),
+                schema_ref: schema.clone(),
                 budget_review: BudgetReviewRecord {
                     reviewer: "".to_string(),
                     plaintext_fields: vec![],
@@ -938,7 +1149,7 @@ mod tests {
         let event_ref = registry
             .register(EventTypeSpec {
                 event_type: "wos.kernel.case_created".to_string(),
-                schema_ref: "schema:v1".to_string(),
+                schema_ref: schema,
                 budget_review: BudgetReviewRecord {
                     reviewer: "security-review".to_string(),
                     plaintext_fields: vec!["eventType".to_string()],
@@ -946,6 +1157,76 @@ mod tests {
                 },
             })
             .expect("register");
-        assert_eq!(event_ref.schema_ref, "schema:v1");
+        assert_eq!(event_ref.schema_ref.as_str(), "schema:v1");
+    }
+
+    #[test]
+    fn given_uri_like_schema_ref_when_parsed_then_round_trips() {
+        let parsed = SchemaRef::new("wos-events://wos.kernel.case_created").expect("valid");
+        assert_eq!(parsed.as_str(), "wos-events://wos.kernel.case_created");
+        assert_eq!(
+            parsed.to_string(),
+            "wos-events://wos.kernel.case_created".to_string()
+        );
+    }
+
+    #[test]
+    fn given_empty_schema_ref_when_parsed_then_error() {
+        assert_eq!(SchemaRef::new(""), Err(SchemaRefError::Empty));
+        assert_eq!(SchemaRef::new("   "), Err(SchemaRefError::Empty));
+    }
+
+    #[test]
+    fn given_schema_ref_without_scheme_when_parsed_then_error() {
+        assert_eq!(
+            SchemaRef::new("not-a-uri"),
+            Err(SchemaRefError::MissingScheme)
+        );
+        assert_eq!(
+            SchemaRef::new(":missing-scheme"),
+            Err(SchemaRefError::MissingScheme)
+        );
+        assert_eq!(
+            SchemaRef::new("missing-body:"),
+            Err(SchemaRefError::MissingScheme)
+        );
+    }
+
+    #[test]
+    fn given_profile_id_constants_when_wrapped_then_round_trip_preserves_wire_int() {
+        let wos = ProfileId::new(1);
+        let formspec = ProfileId::new(2);
+        assert_eq!(wos.get(), 1);
+        assert_eq!(formspec.get(), 2);
+        assert_ne!(wos, formspec);
+    }
+
+    #[test]
+    fn given_event_family_id_when_built_then_rejects_empty() {
+        assert_eq!(
+            EventFamilyId::new(""),
+            Err(EventFamilyIdError::Empty)
+        );
+        assert_eq!(
+            EventFamilyId::new("   "),
+            Err(EventFamilyIdError::Empty)
+        );
+        let family = EventFamilyId::new("wos.kernel").expect("non-empty");
+        assert_eq!(family.as_str(), "wos.kernel");
+    }
+
+    #[test]
+    fn given_admitted_event_when_constructed_then_carries_neutral_metadata() {
+        let admitted = AdmittedEvent {
+            event_type: "wos.kernel.case_created".to_string(),
+            event_family: EventFamilyId::new("wos.kernel").expect("family"),
+            schema_ref: SchemaRef::new("wos-events://wos.kernel.case_created").expect("schema"),
+            profile_id: ProfileId::new(1),
+            direct_submit: DirectSubmitPolicy::ServiceOnly,
+        };
+        assert_eq!(admitted.event_type, "wos.kernel.case_created");
+        assert_eq!(admitted.event_family.as_str(), "wos.kernel");
+        assert_eq!(admitted.profile_id.get(), 1);
+        assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
     }
 }

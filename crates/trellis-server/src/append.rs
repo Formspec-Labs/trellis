@@ -16,7 +16,9 @@ use stack_common_error::StackError;
 use trellis_core::{AuthoredEvent, LedgerStore};
 use trellis_export_writer::PostureDeclaration as ExportPostureDeclaration;
 use trellis_export_writer::TrellisTimestamp;
-use trellis_server_ports::{AdmissionEvent, AppendUnitOfWork, ComputeContext, ComputeSensitivity};
+use trellis_server_ports::{
+    AdmissionEvent, AdmittedEvent, AppendUnitOfWork, ComputeContext, ComputeSensitivity,
+};
 use trellis_service_client::{SubstrateAppendBody, SubstrateAppendResult};
 use trellis_types::{CONTENT_DOMAIN, StoredEvent};
 
@@ -96,7 +98,8 @@ impl<'a> AppendCoordinator<'a> {
         let payload_json = serde_json::to_vec(&command.payload).map_err(|error| {
             StackError::bad_request(format!("payload JSON encode failed: {error}"))
         })?;
-        self.state
+        let admitted = self
+            .state
             .admission_policy
             .admit(&AdmissionEvent {
                 scope: command.scope.as_bytes(),
@@ -135,7 +138,8 @@ impl<'a> AppendCoordinator<'a> {
             let result = append_result_for_event(
                 &command.scope,
                 existing,
-                &command.event_type,
+                admitted.profile_id,
+                &admitted.event_type,
                 &bundle,
                 true,
             )?;
@@ -171,14 +175,14 @@ impl<'a> AppendCoordinator<'a> {
             .ok_or_else(|| StackError::internal("trellis core did not emit a stored event"))?
             .with_canonical_event_hash(Some(artifacts.canonical_event_hash));
         let unit = AppendUnitOfWork::new(stored, command.compute_context);
-        self.commit_unit(&command.scope, &command.event_type, &mut events, unit, true)
+        self.commit_unit(&command.scope, &admitted, &mut events, unit, true)
             .await
     }
 
     async fn commit_unit(
         &self,
         scope: &str,
-        event_type: &str,
+        admitted: &AdmittedEvent,
         events: &mut Vec<StoredEvent>,
         unit: AppendUnitOfWork,
         update_head: bool,
@@ -189,7 +193,14 @@ impl<'a> AppendCoordinator<'a> {
         events.push(stored.clone());
         let bundle =
             publish_bundle(self.state, scope.as_bytes(), events, update_head, &compute).await?;
-        let result = append_result_for_event(scope, &stored, event_type, &bundle, true)?;
+        let result = append_result_for_event(
+            scope,
+            &stored,
+            admitted.profile_id,
+            &admitted.event_type,
+            &bundle,
+            true,
+        )?;
         Ok(AppendOutcome { result, stored })
     }
 }

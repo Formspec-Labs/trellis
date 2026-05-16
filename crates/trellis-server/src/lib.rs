@@ -76,6 +76,7 @@ use trellis_export_writer::{
     ExportWriterInput, RegistrySnapshot as ExportRegistrySnapshot,
     SigningKeyMaterial as ExportSigningKey, TrellisTimestamp, write_export,
 };
+use trellis_server_ports::ProfileId;
 use trellis_service_client::{
     ComputeContext, SubstrateAppendResult,
     VerificationReceipt,
@@ -93,18 +94,6 @@ const DEFAULT_BIND_ADDR: &str = "127.0.0.1:8080";
 #[must_use]
 pub const fn default_bind_addr() -> &'static str {
     DEFAULT_BIND_ADDR
-}
-
-fn profile_id_for_admitted_event(event_type: &str) -> Result<u64, StackError> {
-    if event_type.starts_with("wos.") {
-        Ok(integrity_verify::WOS_PROFILE_ID)
-    } else if event_type.starts_with("substrate.append.") {
-        Ok(integrity_verify::FORMSPEC_PROFILE_ID)
-    } else {
-        Err(StackError::internal(format!(
-            "unknown event type for profile dispatch: {event_type}"
-        )))
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -263,6 +252,7 @@ pub(crate) async fn publish_bundle(
 pub(crate) fn append_result_for_event(
     scope: &str,
     event: &StoredEvent,
+    profile_id: ProfileId,
     event_type: &str,
     bundle: &BundleRecord,
     export_verified: bool,
@@ -277,7 +267,7 @@ pub(crate) fn append_result_for_event(
         bundle_ref: bundle.artifact_ref.uri.clone(),
         verification_receipt: VerificationReceipt {
             verified: export_verified,
-            profile_id: profile_id_for_admitted_event(event_type)?,
+            profile_id: profile_id.get(),
             event_type: event_type.to_string(),
         },
     })
@@ -1601,7 +1591,10 @@ mod tests {
     impl EventAdmissionPolicy for CountingAdmissionPolicy {
         type Error = StackError;
 
-        async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<(), Self::Error> {
+        async fn admit(
+            &self,
+            event: &AdmissionEvent<'_>,
+        ) -> Result<trellis_server_ports::AdmittedEvent, Self::Error> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             self.inner.admit(event).await
         }

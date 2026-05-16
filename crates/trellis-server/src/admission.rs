@@ -10,9 +10,41 @@ use async_trait::async_trait;
 use axum::http::StatusCode;
 use stack_common_error::{ErrorCode, StackError};
 use trellis_server_ports::{
-    AdmissionEvent, EventAdmissionPolicy, ScopeAuthorization, ScopeAuthorizer,
+    AdmissionEvent, AdmittedEvent, DirectSubmitPolicy, EventAdmissionPolicy, EventFamilyId,
+    ProfileId, SchemaRef, ScopeAuthorization, ScopeAuthorizer,
 };
 use wos_events::{ProvenanceKind, ProvenanceRecord};
+
+const FORMSPEC_EVENT_FAMILY: &str = "formspec.response";
+const WOS_KERNEL_EVENT_FAMILY: &str = "wos.kernel";
+
+fn formspec_admitted_event(event_type: &str) -> Result<AdmittedEvent, StackError> {
+    let family = EventFamilyId::new(FORMSPEC_EVENT_FAMILY)
+        .map_err(|error| StackError::internal(format!("formspec family invariant: {error}")))?;
+    let schema_ref = SchemaRef::new(format!("formspec-events://{event_type}"))
+        .map_err(|error| StackError::internal(format!("formspec schema ref invariant: {error}")))?;
+    Ok(AdmittedEvent {
+        event_type: event_type.to_string(),
+        event_family: family,
+        schema_ref,
+        profile_id: ProfileId::new(integrity_verify::FORMSPEC_PROFILE_ID),
+        direct_submit: DirectSubmitPolicy::ServiceOnly,
+    })
+}
+
+fn wos_admitted_event(event_type: &str) -> Result<AdmittedEvent, StackError> {
+    let family = EventFamilyId::new(WOS_KERNEL_EVENT_FAMILY)
+        .map_err(|error| StackError::internal(format!("wos family invariant: {error}")))?;
+    let schema_ref = SchemaRef::new(format!("wos-events://{event_type}"))
+        .map_err(|error| StackError::internal(format!("wos schema ref invariant: {error}")))?;
+    Ok(AdmittedEvent {
+        event_type: event_type.to_string(),
+        event_family: family,
+        schema_ref,
+        profile_id: ProfileId::new(integrity_verify::WOS_PROFILE_ID),
+        direct_submit: DirectSubmitPolicy::ServiceOnly,
+    })
+}
 
 /// Formspec aggregate admission for intake proof append events.
 #[derive(Debug, Clone, Copy)]
@@ -22,7 +54,7 @@ pub struct FormspecAppendAdmissionPolicy;
 impl EventAdmissionPolicy for FormspecAppendAdmissionPolicy {
     type Error = StackError;
 
-    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<(), Self::Error> {
+    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<AdmittedEvent, Self::Error> {
         if event.event_type != crate::FORMSPEC_RESPONSE_SUBMITTED {
             return Err(StackError::bad_request(format!(
                 "event type `{}` is not a Formspec append literal",
@@ -42,7 +74,7 @@ impl EventAdmissionPolicy for FormspecAppendAdmissionPolicy {
                 )));
             }
         }
-        Ok(())
+        formspec_admitted_event(event.event_type)
     }
 }
 
@@ -57,7 +89,7 @@ pub struct RoutedEventAdmissionPolicy {
 impl EventAdmissionPolicy for RoutedEventAdmissionPolicy {
     type Error = StackError;
 
-    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<(), Self::Error> {
+    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<AdmittedEvent, Self::Error> {
         if event.event_type == crate::FORMSPEC_RESPONSE_SUBMITTED {
             self.formspec.admit(event).await
         } else {
@@ -74,7 +106,7 @@ pub struct WosEventAdmissionPolicy;
 impl EventAdmissionPolicy for WosEventAdmissionPolicy {
     type Error = StackError;
 
-    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<(), Self::Error> {
+    async fn admit(&self, event: &AdmissionEvent<'_>) -> Result<AdmittedEvent, Self::Error> {
         let expected_kind = ProvenanceKind::from_canonical_event_literal(event.event_type)
             .ok_or_else(|| {
                 StackError::bad_request(format!(
@@ -101,7 +133,7 @@ impl EventAdmissionPolicy for WosEventAdmissionPolicy {
                 event.event_type
             )));
         }
-        Ok(())
+        wos_admitted_event(event.event_type)
     }
 }
 
@@ -158,9 +190,10 @@ mod tests {
     use super::*;
     use trellis_server_ports::ScopeAction;
 
-    /// Given a Formspec append payload with required keys, when routed admission runs, then it succeeds.
+    /// Given a Formspec append payload with required keys, when routed admission runs, then it
+    /// returns Formspec-profile admitted metadata.
     #[tokio::test]
-    async fn given_valid_formspec_payload_when_routed_admits_then_ok() {
+    async fn given_valid_formspec_payload_when_routed_admits_then_formspec_metadata() {
         let policy = RoutedEventAdmissionPolicy {
             wos: WosEventAdmissionPolicy,
             formspec: FormspecAppendAdmissionPolicy,
@@ -171,7 +204,15 @@ mod tests {
             event_type: crate::FORMSPEC_RESPONSE_SUBMITTED,
             payload,
         };
-        policy.admit(&event).await.expect("formspec branch admits");
+        let admitted = policy.admit(&event).await.expect("formspec branch admits");
+        assert_eq!(admitted.event_type, crate::FORMSPEC_RESPONSE_SUBMITTED);
+        assert_eq!(admitted.event_family.as_str(), "formspec.response");
+        assert_eq!(
+            admitted.profile_id.get(),
+            integrity_verify::FORMSPEC_PROFILE_ID
+        );
+        assert_eq!(admitted.direct_submit, trellis_server_ports::DirectSubmitPolicy::ServiceOnly);
+        assert!(admitted.schema_ref.as_str().starts_with("formspec-events://"));
     }
 
     /// Given a Formspec append payload missing `aggregateType`, when admission runs, then the
@@ -226,9 +267,10 @@ mod tests {
         );
     }
 
-    /// Given a WOS case_created payload aligned to its literal, when WOS admission runs, then it succeeds.
+    /// Given a WOS case_created payload aligned to its literal, when WOS admission runs, then it
+    /// returns the WOS profile id and family without re-parsing the event type.
     #[tokio::test]
-    async fn given_matching_wos_provenance_when_wos_admits_then_ok() {
+    async fn given_matching_wos_provenance_when_wos_admits_then_wos_metadata() {
         let literal = "wos.kernel.case_created";
         let mut record = ProvenanceRecord::blank(ProvenanceKind::CaseCreated);
         record.id = "prov-admission-boundary".to_string();
@@ -238,10 +280,17 @@ mod tests {
             event_type: literal,
             payload: payload.as_slice(),
         };
-        WosEventAdmissionPolicy
+        let admitted = WosEventAdmissionPolicy
             .admit(&event)
             .await
             .expect("WOS admission accepts aligned payload");
+        assert_eq!(admitted.event_type, literal);
+        assert_eq!(admitted.event_family.as_str(), "wos.kernel");
+        assert_eq!(admitted.profile_id.get(), integrity_verify::WOS_PROFILE_ID);
+        assert_eq!(
+            admitted.schema_ref.as_str(),
+            "wos-events://wos.kernel.case_created"
+        );
     }
 
     /// Given a scope listed in JWT scopes, when scoped authorizer runs, then authorization succeeds.
