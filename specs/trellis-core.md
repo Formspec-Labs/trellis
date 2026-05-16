@@ -112,7 +112,7 @@ This specification does not define:
 | §6.1 Event Format (sequence, prev_hash, content_hash structure as identity-free primitives) | Event-sequence / event-kind value types | `integrity-stack/crates/integrity-event/` |
 | §18 Export Package Layout (deterministic ZIP byte rules: STORED-only, zero extra fields, fixed mtime, lexicographic ordering, central-directory ordering, ZIP64 thresholds) | Deterministic ZIP byte structure | `integrity-stack/crates/integrity-bundle/` |
 
-The Trellis Core text below is the **profile composition**: it pins the Trellis-specific protected-header labels (`suite_id = -65537`, `artifact_type = -65538`, `profile_id = -65539`), the Trellis-specific domain-separation tags (`trellis-event-v1`, `trellis-author-event-v1`, `trellis-content-v1`, `trellis-checkpoint-v1`, `trellis-export-manifest-v1`, `trellis-merkle-leaf-v1`, `trellis-merkle-interior-v1`, and the application-specific tags registered in §9.8), the Trellis Phase 1 signature suite (`suite_id = 1` → Ed25519 over COSE_Sign1), the Trellis HPKE wrap discipline, the Trellis chain-construction rules (§10), the Trellis checkpoint format (§11), the Trellis export package layout and required archive members (§18), and the offline verification algorithm (§19) — none of which the substrate crates define. Where `integrity-canonical` is named below, Trellis §9 composes the length-prefixed hash-domain family; it is not referring to the Formspec canonical JSON `domain ‖ NUL ‖ JCS(value)` profile except where a JSON-profile section names that family explicitly.
+The Trellis Core text below is the **profile composition**: it pins the Trellis-specific protected-header labels (`suite_id = -65537`, `artifact_type = -65538`; the previously-allocated `profile_id = -65539` retires per ADR 0109 — see §7.4 and §26.2.1), the Trellis-specific domain-separation tags (`trellis-event-v1`, `trellis-author-event-v1`, `trellis-content-v1`, `trellis-checkpoint-v1`, `trellis-export-manifest-v1`, `trellis-merkle-leaf-v1`, `trellis-merkle-interior-v1`, and the application-specific tags registered in §9.8), the Trellis Phase 1 signature suite (`suite_id = 1` → Ed25519 over COSE_Sign1), the Trellis HPKE wrap discipline, the Trellis chain-construction rules (§10), the Trellis checkpoint format (§11), the Trellis export package layout and required archive members (§18), and the offline verification algorithm (§19) — none of which the substrate crates define. Where `integrity-canonical` is named below, Trellis §9 composes the length-prefixed hash-domain family; it is not referring to the Formspec canonical JSON `domain ‖ NUL ‖ JCS(value)` profile except where a JSON-profile section names that family explicitly.
 
 Where this document restates byte-level rules that the substrate owns (encoding rules in §5, COSE_Sign1 envelope rules in §7.4, the length-prefixed domain-separation framing in §9.1, the deterministic-ZIP rules in §18.1), the restatement is **for reader-coherence only**; if a future revision of this document drifts from substrate behavior, the substrate prevails by construction. A conformant implementation is one that composes the substrate primitives in the orders pinned here; an implementation that re-implements a substrate primitive locally and disagrees with substrate output is non-conformant.
 
@@ -391,7 +391,7 @@ Traceability: **TR-CORE-069** (registry rule), **TR-OP-046** (custody-model + di
 
 **Requirement class:** Fact Producer, Verifier.
 
-**Substrate authority.** Per §1.5, the COSE_Sign1 byte envelope — protected-header construction, RFC 9052 `Sig_structure` array assembly, payload-mode handling (embedded vs. detached), and Ed25519 sign/verify helper operations — is owned by `integrity-stack/crates/integrity-cose/`. The substrate crate also owns the COSE label allocation discipline used by Trellis: `COSE_LABEL_ALG = 1`, `COSE_LABEL_KID = 4`, `COSE_LABEL_SUITE_ID = -65537`, and `COSE_LABEL_PROFILE_ID = -65539`. The Trellis Signature Profile in §7 is the Trellis-specific composition of those substrate primitives: it pins `alg = -8` (EdDSA) and `suite_id = 1` (Ed25519) as the Phase 1 mandatory suite, names `artifact_type` under integer label `-65538`, defines the artifact-type values (`"event"`, `"checkpoint"`, `"manifest"`), specifies the migration discipline that makes a 2026 signature resolvable in 2045 (§7.3), and reserves the `suite_id` registry codepoints (§7.2). Substrate test vectors cover the COSE_Sign1 byte envelope; Trellis fixtures (§29, `fixtures/vectors/**`) cover the Trellis profile composition.
+**Substrate authority.** Per §1.5, the COSE_Sign1 byte envelope — protected-header construction, RFC 9052 `Sig_structure` array assembly, payload-mode handling (embedded vs. detached), and Ed25519 sign/verify helper operations — is owned by `integrity-stack/crates/integrity-cose/`. The substrate crate also owns the COSE label allocation discipline used by Trellis: `COSE_LABEL_ALG = 1`, `COSE_LABEL_KID = 4`, `COSE_LABEL_SUITE_ID = -65537`, and `COSE_LABEL_ARTIFACT_TYPE = -65538`. The substrate crate additionally owns `COSE_LABEL_METHOD_URI = -65540` for the consumer detached-signature envelope shape (ADR 0109); Trellis substrate envelopes never carry that label. The retired `COSE_LABEL_PROFILE_ID = -65539` is tombstoned per ADR 0109; verifiers reject envelopes presenting it. The Trellis Signature Profile in §7 is the Trellis-specific composition of those substrate primitives: it pins `alg = -8` (EdDSA) and `suite_id = 1` (Ed25519) as the Phase 1 mandatory suite, requires `artifact_type` under integer label `-65538` with the closed enum values (`"event"`, `"checkpoint"`, `"manifest"`), specifies the migration discipline that makes a 2026 signature resolvable in 2045 (§7.3), and reserves the `suite_id` registry codepoints (§7.2). Substrate test vectors cover the COSE_Sign1 byte envelope; Trellis fixtures (§29, `fixtures/vectors/**`) cover the Trellis profile composition.
 
 Every signed artifact in Trellis — events, checkpoints, manifests, and signing-key-registry administrative entries — is a COSE_Sign1 value and carries an explicit `suite_id` identifying the signature suite used. A verifier that encounters an unregistered `suite_id` MUST reject the artifact. The `suite_id` registry (§26.2) is part of the IANA considerations.
 
@@ -432,21 +432,24 @@ Trellis uses RFC 9052 COSE_Sign1 directly. Implementations MUST use a normal COS
 
 **Payload mode.** Every Trellis ledger/export COSE_Sign1 artifact — Event, Checkpoint, Export Manifest, and signing-key-registry administrative entry — is the CBOR tag-18 4-array `[protected, unprotected, payload, signature]` of [RFC 9052] §4.2, with the payload bstr carried at array position 3 (i.e., embedded). For those artifacts, the `payload` field MUST NOT be `nil`, and a verifier MUST reject a COSE_Sign1 whose payload bstr is absent or replaced with `nil`.
 
-COSE_Sign1 envelopes used only as detached signatures over externally supplied canonical bytes MAY set `payload = nil` when they carry `profile_id` and are not themselves an Event, Checkpoint, Export Manifest, or signing-key-registry administrative entry. A detached verifier MUST reconstruct the RFC 9052 `Sig_structure` over the externally supplied bytes. If an envelope embeds a payload and the caller also supplies external bytes, the verifier MUST first require byte equality between the embedded payload and the supplied bytes; mismatch is a verification failure before primitive signature acceptance.
+COSE_Sign1 envelopes used as detached signatures over externally supplied canonical bytes — the consumer detached-signature shape per ADR 0109, owned by `integrity-cose` — MAY set `payload = nil`. These envelopes are NOT Trellis substrate artifacts (Event, Checkpoint, Export Manifest, or signing-key-registry administrative entries); their protected-header shape and dispatch are defined by `integrity-cose` and consumer specs. A detached verifier MUST reconstruct the RFC 9052 `Sig_structure` over the externally supplied bytes. If an envelope embeds a payload and the caller also supplies external bytes, the verifier MUST first require byte equality between the embedded payload and the supplied bytes; mismatch is a verification failure before primitive signature acceptance.
 
-For every Trellis COSE_Sign1 artifact, the protected header MUST contain:
+For every Trellis substrate COSE_Sign1 artifact, the protected header MUST contain:
 
 | Header | Label (integer key) | Value |
 |---|---|---|
 | `alg` | `1` (per [RFC 9052] §3.1) | COSE algorithm identifier. Phase 1: `-8` (EdDSA). |
 | `kid` | `4` (per [RFC 9052] §3.1) | 16-byte signing-key identifier resolvable in `signing-key-registry.cbor` (§8). |
 | `suite_id` | `-65537` | Trellis signature-suite identifier. Phase 1: `1`. |
+| `artifact_type` | `-65538` | Substrate structural role. Closed-enum tstr value: `"event"`, `"checkpoint"`, or `"manifest"`. Required per ADR 0109. |
 
-The protected header MAY additionally carry `artifact_type` under integer label `-65538` with values `"event"`, `"checkpoint"`, `"manifest"`, or another registered value. If present, a verifier MUST check that it matches the containing artifact. If absent, the containing archive member or enclosing structure supplies the artifact type.
+`artifact_type` is required on every Trellis substrate envelope per ADR 0109 Bound pre-decision #1. The enum is closed at three values — future expansion requires a Trellis-owned spec amendment, not a registry append. A verifier MUST reject envelopes whose `artifact_type` is absent or carries any value outside the closed enum.
 
-The protected header MAY additionally carry `profile_id` under integer label `-65539`. Envelopes that dispatch semantic verification plugins from the COSE protected header MUST carry `profile_id`; Phase 1 Core event, checkpoint, and manifest artifacts MAY omit it when the containing archive member or enclosing structure supplies the artifact role. A verifier that supports plugin-dispatched artifacts MUST treat `profile_id` as protected dispatch input and MUST reject an artifact whose `profile_id` is unknown for the verification context.
+**Retired label.** COSE label `-65539` (`profile_id`) is permanently retired by ADR 0109. New envelopes MUST NOT emit it. Verifiers MUST reject any envelope presenting `-65539` with a named "retired profile_id present" error. Future Trellis-allocated labels skip `-65539`; the codepoint is not reused.
 
-**Label rationale and registry.** `alg` and `kid` use the integer labels registered in [RFC 9052] §3.1. The Trellis-specific headers `suite_id`, `artifact_type`, and `profile_id` use negative integer labels in the COSE private-use range (per [RFC 9052] §1.4 / §11.3), placed below `-65536` to stay clear of the 16-bit-wide IANA-assigned ranges. `profile_id = -65539` is the next sequentially-descending allocation after `suite_id = -65537` and `artifact_type = -65538`. Future Trellis-introduced protected-header keys MUST be assigned sequentially-descending integer labels from this namespace and registered alongside the `suite_id` registry (§26.2). Implementations MUST NOT use text-string labels for these headers; the integer labels above are the only conformant encoding.
+**Consumer detached-signature envelope.** Authored signatures, verification receipts, and other consumer-owned signed artifacts use a separate envelope shape — MAP_3 with `{alg, kid, method_uri}` at COSE label `-65540` (`method_uri`). The label is owned by `integrity-cose`; Trellis Core does not reference `-65540` on substrate envelopes. URI values are consumer-owned and namespaced (Formspec: `urn:formspec:sig-method:*` and `urn:formspec:receipt-method:*`; WOS reserves `urn:wos:attestation-method:*`). See `thoughts/registries/uri-prefix-coordination.md` at the stack root.
+
+**Label rationale and registry.** `alg` and `kid` use the integer labels registered in [RFC 9052] §3.1. The Trellis-specific headers `suite_id` and `artifact_type` use negative integer labels in the COSE private-use range (per [RFC 9052] §1.4 / §11.3), placed below `-65536` to stay clear of the 16-bit-wide IANA-assigned ranges. `profile_id = -65539` was previously allocated and is now retired per ADR 0109. Future Trellis-introduced protected-header keys MUST be assigned sequentially-descending integer labels from this namespace, skipping `-65539`, and registered alongside the `suite_id` registry (§26.2). Implementations MUST NOT use text-string labels for these headers; the integer labels above are the only conformant encoding.
 
 **Protected-header map serialization.** The COSE protected header is itself a CBOR map wrapped in a bstr; its bytes determine the `Sig_structure` preimage and therefore the signature. The protected-header map MUST be serialized per the dCBOR rules of §5.1. Because §5.1 specifies byte-wise lexicographic ordering of the canonical CBOR encoding of each key, CBOR integer keys are effectively ordered by numeric value for single-byte-encoded keys and by their encoded bytes otherwise; duplicate keys MUST be rejected. A verifier MUST recompute `Sig_structure` using the exact protected-header bstr bytes present in the COSE envelope; it MUST NOT re-serialize the map.
 
@@ -455,10 +458,12 @@ To sign an Event, Checkpoint, or Export Manifest:
 1. Build the artifact payload map (`EventPayload`, `CheckpointPayload`, or `ExportManifestPayload`) with no signature field.
 2. Serialize the payload map as dCBOR (§5).
 3. Construct a COSE_Sign1 object whose payload is those bytes.
-4. Populate the protected header with `alg`, `kid`, and `suite_id`; artifacts that dispatch semantic verification plugins also populate `profile_id`.
+4. Populate the protected header with `alg`, `kid`, `suite_id`, and `artifact_type` — all four required on substrate envelopes per ADR 0109.
 5. Sign the RFC 9052 `Sig_structure` array `["Signature1", protected, external_aad, payload]`, with `external_aad` equal to the zero-length byte string for Phase 1.
 
-A verifier uses the protected-header `kid` to resolve the public key via the signing-key registry (§8), uses protected-header `suite_id` and `alg` to select the suite, uses protected-header `profile_id` when plugin dispatch is active, and verifies the COSE_Sign1 signature over the standard `Sig_structure`. For embedded Trellis ledger/export artifacts, the signed payload bytes are the COSE payload bstr. For detached signatures, the signed payload bytes are supplied by the caller and checked under the payload-mode rule above. Signature verification is independent of all other verification steps.
+A verifier uses the protected-header `kid` to resolve the public key via the signing-key registry (§8), uses protected-header `suite_id` and `alg` to select the suite, uses protected-header `artifact_type` to select the payload decoder schema, and verifies the COSE_Sign1 signature over the standard `Sig_structure`. For embedded Trellis substrate artifacts, the signed payload bytes are the COSE payload bstr. For consumer detached signatures (separate envelope shape owned by `integrity-cose`), the signed payload bytes are supplied by the caller and checked under the payload-mode rule above. Signature verification is independent of all other verification steps.
+
+`artifact_type` is a schema selector (which payload decoder runs), not a runtime dispatcher. Semantic dispatch for events — selecting the validator plugin — uses `EventHeader.event_type` inside the canonical event payload (§23.4 prefix-registration pattern). Checkpoint and Manifest artifacts dispatch directly through the substrate; no plugin dispatch axis applies. This is the ADR 0109 surface-split — wire format here, semantic identity in signed payload, validator plugin selection one level deeper inside the envelope structure.
 
 ---
 
@@ -2652,16 +2657,18 @@ This specification requests registration of the media type `application/trellis-
 
 A new IANA registry `Trellis Signature Suites` is requested. Registration policy: Specification Required. Initial contents per §7.2. Each registration MUST include: suite identifier, signature algorithm, digest algorithm, reference specification, status.
 
-### 26.2.1 `profile_id` value registry
+### 26.2.1 `profile_id` value registry — retired
 
-The `profile_id` protected-header label registered in §7.4 carries an unsigned integer value from this sub-registry. Trellis maintainers own the registry until IANA assignment under the shared governance of the Formspec/WOS/Trellis working group.
+This sub-registry is **retired by ADR 0109**. The `profile_id` protected-header label (`-65539`) was previously used to dispatch verification plugins from the COSE protected header; ADR 0109 surface-splits dispatch into the substrate-structural axis (`artifact_type` at `-65538`, closed enum, defined inline at §7.4) and the consumer detached-signature axis (`method_uri` at `-65540`, URI-valued, owned by `integrity-cose`).
 
-Allocation is sequential from `1`. Value `0` is reserved and MUST NOT identify a profile. Each registration MUST include: profile identifier, profile name, owning specification, verification plugin owner, and status.
+Previously allocated values are retained here as historical record only:
 
 | profile_id | Dispatch name | Owning specification | Status |
 |------------|---------|----------------------|--------|
-| 1 | WOS workflow event | WOS / `WOS_PROFILE_ID` | Active |
-| 2 | Formspec authored signature | Formspec Core §2.1.6 / `FORMSPEC_PROFILE_ID` | Active |
+| 1 | WOS workflow event | WOS / formerly `WOS_PROFILE_ID` | Retired |
+| 2 | Formspec authored signature | Formspec Core §2.1.6 / formerly `FORMSPEC_PROFILE_ID` | Retired |
+
+No new values may be allocated under this sub-registry. Future substrate structural roles register in the closed `artifact_type` enum at §7.4 via Trellis-owned spec amendment. Future consumer detached-signature methods register URI prefixes in their owning consumer spec; coordination at the stack level lives in `thoughts/registries/uri-prefix-coordination.md`.
 
 ### 26.3 Custody Models registry
 
@@ -2721,10 +2728,10 @@ The Phase 1 success criterion (§1 Status) is that a second implementation, writ
 ; Trellis Core Phase 1 CDDL grammar
 ; All types encoded as dCBOR (RFC 8949 §4.2.2).
 
-digest     = bstr .size 32      ; SHA-256
-suite_id   = uint
-profile_id = uint
-kid        = bstr .size 16
+digest         = bstr .size 32  ; SHA-256
+suite_id       = uint
+artifact_type  = "event" / "checkpoint" / "manifest"  ; closed enum, ADR 0109
+kid            = bstr .size 16
 timestamp  = [uint, uint .le 999999999]  ; [seconds since Unix epoch UTC, nanos within second]
 ; Traceability: TR-CORE-093.
 
@@ -2818,20 +2825,27 @@ KeyBagEntry = {
 
 ; --- Signature --------------------------------------------------------
 
+; Trellis substrate envelope protected-header map (ADR 0109).
+; All four labels are REQUIRED on every substrate envelope.
+; Label -65539 (profile_id) is retired and rejected by verifiers.
+; Consumer detached-signature envelopes use a separate production
+; (see `integrity-cose` substrate documentation): MAP_3 with
+; `-65540 => method_uri` (tstr-URI) replacing `-65538 => artifact_type`.
 COSEProtectedHeaders = {
-  1 => int,               ; alg, Phase 1: -8 (EdDSA)
+  1 => int,                       ; alg, Phase 1: -8 (EdDSA)
   4 => kid,
   -65537 => suite_id,
-  ? -65538 => tstr,       ; artifact_type
-  ? -65539 => profile_id,
+  -65538 => artifact_type,        ; required per ADR 0109
 }
 
 COSESign1Bytes = bstr   ; RFC 9052 COSE_Sign1 tagged CBOR value as bytes.
-                       ; Protected headers carry alg, kid, suite_id, and
-                       ; plugin-dispatched artifacts carry profile_id.
+                       ; Substrate envelope protected headers carry alg, kid,
+                       ; suite_id, artifact_type per ADR 0109. The retired
+                       ; profile_id label (-65539) is tombstoned; verifiers
+                       ; reject envelopes that emit it.
                        ; Events, checkpoints, manifests, and key-registry
-                       ; administrative entries embed payload bstrs; detached
-                       ; signatures over caller-supplied canonical bytes may
+                       ; administrative entries embed payload bstrs; consumer
+                       ; detached signatures (separate envelope shape) may
                        ; use payload = nil only under §7.4 payload-mode rules.
 
 CanonicalEventHashPreimage = {
