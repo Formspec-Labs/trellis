@@ -36,7 +36,9 @@ pub fn formspec_schema_ref(event_type: &str) -> String {
 /// against [`trellis_server_ports::EventTypeRegistry`] at startup.
 ///
 /// Each entry carries the full neutral metadata (`event_family`, `profile_id`,
-/// `direct_submit`) so the registry remains the catalog's source of truth.
+/// `artifact_type`, `direct_submit`) so the registry remains the catalog's
+/// source of truth. `profile_id` retires per ADR 0109; `artifact_type` is the
+/// substrate structural-role contract.
 #[must_use]
 pub fn formspec_event_type_specs() -> Vec<EventTypeSpec> {
     vec![EventTypeSpec {

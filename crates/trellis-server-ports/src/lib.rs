@@ -905,8 +905,9 @@ pub struct BudgetReviewRecord {
 /// Event type registration request.
 ///
 /// Carries the full neutral metadata (`event_family`, `profile_id`,
-/// `direct_submit`) so the event-type catalog projection and downstream
-/// readers consult one source of truth instead of re-parsing the literal.
+/// `artifact_type`, `direct_submit`) so the event-type catalog projection and
+/// downstream readers consult one source of truth instead of re-parsing the
+/// literal. `profile_id` is retired by ADR 0109; `artifact_type` is canonical.
 /// This mirrors the [`AdmittedEvent`] contract for the registration path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventTypeSpec {

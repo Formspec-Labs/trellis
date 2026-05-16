@@ -51,9 +51,10 @@ pub fn wos_event_family(event_type: &str) -> Option<&str> {
 /// against [`trellis_server_ports::EventTypeRegistry`] at startup.
 ///
 /// Each entry carries the full neutral metadata (`event_family`, `profile_id`,
-/// `direct_submit`) so the registry — not a downstream string-parsing helper
-/// — is the catalog's source of truth. Reviewer is non-empty so registration
-/// passes the budget gate.
+/// `artifact_type`, `direct_submit`) so the registry — not a downstream string-
+/// parsing helper — is the catalog's source of truth. `profile_id` retires per
+/// ADR 0109; `artifact_type` is the substrate structural-role contract.
+/// Reviewer is non-empty so registration passes the budget gate.
 #[must_use]
 pub fn wos_event_type_specs() -> Vec<EventTypeSpec> {
     let profile_id = ProfileId::new(integrity_verify::WOS_PROFILE_ID);
