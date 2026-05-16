@@ -50,6 +50,100 @@ pub const COSE_LABEL_PROFILE_ID: i128 = -65_539;
 /// [`COSE_LABEL_PROFILE_ID`] (here `n = 65538` gives `-65539`).
 pub const COSE_PROFILE_ID_LABEL_MAGNITUDE: u64 = 65_538;
 
+/// COSE protected-header map label for Trellis `artifact_type` (Core §7.4 / ADR 0109).
+///
+/// Closed-enum tstr value; see [`ArtifactType`]. Required on every Trellis
+/// substrate envelope post-ADR-0109.
+///
+/// This value must stay aligned with Python `COSE_LABEL_ARTIFACT_TYPE` in
+/// `fixtures/vectors/_generator/_lib/byte_utils.py` and with the substrate
+/// primitive `integrity_cose::COSE_LABEL_ARTIFACT_TYPE`.
+pub const COSE_LABEL_ARTIFACT_TYPE: i128 = -65_538;
+
+/// Unsigned magnitude `n` such that the CBOR negative integer `-1 - n` equals
+/// [`COSE_LABEL_ARTIFACT_TYPE`] (here `n = 65537` gives `-65538`).
+pub const COSE_ARTIFACT_TYPE_LABEL_MAGNITUDE: u64 = 65_537;
+
+/// Trellis substrate envelope structural role (Core §7.4 / ADR 0109).
+///
+/// Closed enum, exhaustive over substrate structural roles. Required on every
+/// Trellis substrate envelope. Future expansion requires a Trellis-owned spec
+/// amendment, not a registry append.
+///
+/// - [`ArtifactType::Event`] — Trellis ledger event (the chained, append-only entry).
+/// - [`ArtifactType::Checkpoint`] — Trellis Merkle checkpoint (range-sealing artifact).
+/// - [`ArtifactType::Manifest`] — Trellis export manifest (bundle catalog root).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ArtifactType {
+    /// Trellis ledger event — the chained, append-only entry.
+    Event,
+    /// Trellis Merkle checkpoint — range-sealing artifact.
+    Checkpoint,
+    /// Trellis export manifest — bundle catalog root.
+    Manifest,
+}
+
+impl ArtifactType {
+    /// Returns the canonical tstr value used in the COSE protected header.
+    #[must_use]
+    pub fn cose_value(self) -> &'static str {
+        match self {
+            Self::Event => "event",
+            Self::Checkpoint => "checkpoint",
+            Self::Manifest => "manifest",
+        }
+    }
+
+    /// Parses the canonical tstr value from a COSE protected header.
+    ///
+    /// # Errors
+    /// Returns [`ArtifactTypeError`] when `value` is not one of `"event"`,
+    /// `"checkpoint"`, or `"manifest"`. The closed enum is exhaustive over
+    /// substrate roles; unknown values reject fail-closed per ADR 0109.
+    pub fn from_cose_value(value: &str) -> Result<Self, ArtifactTypeError> {
+        match value {
+            "event" => Ok(Self::Event),
+            "checkpoint" => Ok(Self::Checkpoint),
+            "manifest" => Ok(Self::Manifest),
+            other => Err(ArtifactTypeError {
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for ArtifactType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.cose_value())
+    }
+}
+
+/// Error returned when a tstr value is not a registered [`ArtifactType`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArtifactTypeError {
+    value: String,
+}
+
+impl ArtifactTypeError {
+    /// Returns the unrecognized value that triggered the error.
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl std::fmt::Display for ArtifactTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown artifact_type {:?} — expected one of \"event\", \"checkpoint\", \"manifest\"",
+            self.value
+        )
+    }
+}
+
+impl std::error::Error for ArtifactTypeError {}
+
 /// Signed and canonical event bytes stored after a successful append.
 ///
 /// `idempotency_key` is the optional Core §6.1 / §17 wire-contract
@@ -235,6 +329,14 @@ pub fn encode_cose_profile_id_label() -> Vec<u8> {
     encode_cbor_negative_int(COSE_PROFILE_ID_LABEL_MAGNITUDE)
 }
 
+/// Encodes the CBOR map key bytes for [`COSE_LABEL_ARTIFACT_TYPE`] (ADR 0109).
+///
+/// Equivalent to canonical CBOR for integer `-65538` (`-1 - 65537`).
+#[must_use]
+pub fn encode_cose_artifact_type_label() -> Vec<u8> {
+    encode_cbor_negative_int(COSE_ARTIFACT_TYPE_LABEL_MAGNITUDE)
+}
+
 /// Domain tag for `checkpoint_digest`.
 pub const CHECKPOINT_DOMAIN: &str = "trellis-checkpoint-v1";
 
@@ -253,7 +355,10 @@ pub fn checkpoint_digest(scope: &[u8], payload_bytes: &[u8]) -> [u8; 32] {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_cose_profile_id_label, encode_cose_suite_id_label, encode_uint};
+    use super::{
+        encode_cose_artifact_type_label, encode_cose_profile_id_label, encode_cose_suite_id_label,
+        encode_uint, ArtifactType, ArtifactTypeError,
+    };
 
     #[test]
     fn encode_uint_matches_single_byte_for_small_suite_ids() {
@@ -274,5 +379,66 @@ mod tests {
             encode_cose_profile_id_label(),
             vec![0x3a, 0x00, 0x01, 0x00, 0x02]
         );
+    }
+
+    #[test]
+    fn encode_cose_artifact_type_label_matches_allocated_bytes() {
+        // -65538 = -(65537 + 1); CBOR major type 1, 4-byte payload 0x00010001.
+        assert_eq!(
+            encode_cose_artifact_type_label(),
+            vec![0x3a, 0x00, 0x01, 0x00, 0x01]
+        );
+    }
+
+    #[test]
+    fn artifact_type_cose_values_are_event_checkpoint_manifest() {
+        assert_eq!(ArtifactType::Event.cose_value(), "event");
+        assert_eq!(ArtifactType::Checkpoint.cose_value(), "checkpoint");
+        assert_eq!(ArtifactType::Manifest.cose_value(), "manifest");
+    }
+
+    #[test]
+    fn artifact_type_round_trips_through_cose_value() {
+        for kind in [
+            ArtifactType::Event,
+            ArtifactType::Checkpoint,
+            ArtifactType::Manifest,
+        ] {
+            let s = kind.cose_value();
+            let parsed = ArtifactType::from_cose_value(s).expect("known value");
+            assert_eq!(parsed, kind);
+        }
+    }
+
+    #[test]
+    fn artifact_type_from_cose_value_rejects_unknown() {
+        let err = ArtifactType::from_cose_value("authored-signature")
+            .expect_err("unknown value must reject");
+        assert_eq!(err.value(), "authored-signature");
+        assert!(
+            err.to_string().contains("unknown artifact_type"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn artifact_type_from_cose_value_rejects_empty() {
+        ArtifactType::from_cose_value("").expect_err("empty value must reject");
+    }
+
+    #[test]
+    fn artifact_type_display_matches_cose_value() {
+        assert_eq!(ArtifactType::Event.to_string(), "event");
+        assert_eq!(ArtifactType::Checkpoint.to_string(), "checkpoint");
+        assert_eq!(ArtifactType::Manifest.to_string(), "manifest");
+    }
+
+    #[test]
+    fn artifact_type_error_implements_error_trait() {
+        // Compile-time check via trait object — surfaces if Error impl is dropped.
+        let err: Box<dyn std::error::Error> = Box::new(ArtifactTypeError {
+            value: "x".to_string(),
+        });
+        let _ = err.to_string();
     }
 }
