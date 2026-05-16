@@ -45,8 +45,8 @@ Stack-proof hygiene + release-contract unblockers. Land before deeper substrate 
    Size S. Parent PLN-0381 closed by ADR 0068 D-3.1: IdentityAttestation Facts-tier record shape is now normative; PLN-0310 closed by supersession. Trellis-side action: use canonical wos.assurance.identity_attestation event type under WOS wos.<layer>.<record_kind> taxonomy; replace current x-trellis-test/identity-attestation/v1 fixture-only allowance where appropriate; declare how provider-neutral identity-proofing attestations travel in export bundles. Composes with PLN-0380 (signer-authority claim shape, distinct from authentication method). Progress 2026-05-08: Core §23.4 + Rust/Python WOS-composed verifiers admit wos.assurance.identity_attestation for ADR 0010 identity resolution through consumer-owned validation seam; Trellis center retains only x-trellis-test/* fixture identifier.
 
    **Acceptance:**
-  - wos.assurance.identity_attestation replaces fixture-only x-trellis-test identifier where appropriate; provider-neutral identity-proofing export-bundle shape spec'd; cross-stack fixtures (Formspec → WOS provenance → Trellis envelope) prove composition.
-  - GATE: parent PLN-0384 shared taxonomy / fixture ratification.
+     - wos.assurance.identity_attestation replaces fixture-only x-trellis-test identifier where appropriate; provider-neutral identity-proofing export-bundle shape spec'd; cross-stack fixtures (Formspec → WOS provenance → Trellis envelope) prove composition.
+     - GATE: parent PLN-0384 shared taxonomy / fixture ratification.
 
 **P3 — sustaining:**
 
@@ -83,9 +83,9 @@ Production substrate + case-semantics rows gated by parent ADR decisions. Each i
    Size M-L. Coordinates with WOS MigrationPinChanged (parent PLN-0021) and ops guardrails (parent PLN-0027). Parent backlog: PLN-0023 (envelope/verifier obligations, pin portion), PLN-0026 (cross-version replay determinism vectors). GATE: parent accepts ADR 0071 (PLN-0019 wire home + PLN-0095 wire encoding).
 
    **Acceptance:**
-  - Pin in envelope header (Core + CDDL) — field name 'pin' / type CaseOpenPin (JSON/CDDL may use caseOpenPin camelCase); populated on case-open events.
-  - Verifier: pin immutability unless MigrationPinChanged anchors transition; envelope-version-lineage compatibility.
-  - Vectors: pin-set, pin-mutation-rejected, valid-pin-transition under MigrationPinChanged.
+     - Pin in envelope header (Core + CDDL) — field name 'pin' / type CaseOpenPin (JSON/CDDL may use caseOpenPin camelCase); populated on case-open events.
+     - Verifier: pin immutability unless MigrationPinChanged anchors transition; envelope-version-lineage compatibility.
+     - Vectors: pin-set, pin-mutation-rejected, valid-pin-transition under MigrationPinChanged.
 
 **P2 — standard:**
 
@@ -95,9 +95,9 @@ Production substrate + case-semantics rows gated by parent ADR decisions. Each i
    Size S. WOS emits definition-hash event on caseCreated and determination; Trellis anchors via existing custodyHook seam. No new Trellis primitive — evidence-anchoring pattern handles it. Parent backlog: PLN-0360.
 
    **Acceptance:**
-  - Register definition-hash event-type tag under Core §6.7. custodyHook ingest path; dCBOR-canonicalized; round-trip byte-exact.
-  - Vector exercises definition-hash anchor + verifier cross-check; cross-stack three-way agreement (WOS spec + Trellis verifier + reference adapter).
-  - GATE: parent ratifies ADR 0081 (PLN-0358) and WOS lands three-segment *Ref syntax (PLN-0359).
+     - Register definition-hash event-type tag under Core §6.7. custodyHook ingest path; dCBOR-canonicalized; round-trip byte-exact.
+     - Vector exercises definition-hash anchor + verifier cross-check; cross-stack three-way agreement (WOS spec + Trellis verifier + reference adapter).
+     - GATE: parent ratifies ADR 0081 (PLN-0358) and WOS lands three-segment *Ref syntax (PLN-0359).
 
 - **Trellis #6 — ADR 0070 execution: CommitAttemptFailure ProvenanceKind** · `fs-uj32` · P2
    links ADR 0070 — cross-layer failure and compensation `fs-qzg6`, DurableRuntime::AppendFailure typed enum `fs-vmsx`
@@ -105,10 +105,10 @@ Production substrate + case-semantics rows gated by parent ADR decisions. Each i
    Size M. Trellis local append is stack commit point per ADR 0070 D-1; this adds Facts-tier evidence shape for retryable/budget-exhausted/terminal commit failures plus optional bundle-level summary. Parent backlog: PLN-0044, PLN-0045, PLN-0089 (cross-repo failure-scenario bundle). GATE: parent accepts ADR 0070 (PLN-0035 failure-contract closure); now accepted 2026-05-06.
 
    **Acceptance:**
-  - New recordKind literal under Core §6.7/§19; Facts tier; reservation under ADR 0080 open-discriminator pattern.
-  - Verifier reporting taxonomy distinguishes three typed outcomes (retryable/budget-exhausted/terminal); advisory, not integrity failure.
-  - Optional failures.json at bundle root.
-  - Vectors: append/0NN-commit-failure-retried, append/0NN-commit-failure-stalled, tamper/0NN-failures-json-mismatch.
+     - New recordKind literal under Core §6.7/§19; Facts tier; reservation under ADR 0080 open-discriminator pattern.
+     - Verifier reporting taxonomy distinguishes three typed outcomes (retryable/budget-exhausted/terminal); advisory, not integrity failure.
+     - Optional failures.json at bundle root.
+     - Vectors: append/0NN-commit-failure-retried, append/0NN-commit-failure-stalled, tamper/0NN-failures-json-mismatch.
 
 - **Trellis #4 — ADR 0068 execution: tenant in envelope and verifier** · `fs-zo54` · P2
    links ADR 0068 — tenant and scope composition `fs-ekrn`, WS-020 — Second operational Storage impl (Postgres via sqlx) `fs-sdxe`, WS-107 — Scoped ownership isolation (SRV-001, DDIA… `fs-2jz7`
@@ -116,9 +116,9 @@ Production substrate + case-semantics rows gated by parent ADR decisions. Each i
    Size M. Tenant in envelope + verifier. Gates CLOSED: PLN-0004 (D-1.1 grammar), PLN-0005 (D-1.2 payload.tenant authoritative), PLN-0011 (D-4 tenant×ledger scoped), PLN-0013 (D-3 global identity + per-tenant authority), PLN-0015 (D-2 immutable tuple vs 0071 mutable pins), PLN-0012 (supersession carry-forward: same-tenant reuses Tenant/DefinitionId/KernelId and mints new LedgerId; cross-tenant mints fresh bundle). Envelope reserves capacity under ADR 0003; activation is runtime + verifier + vector work. Parent backlog: PLN-0002, PLN-0009, PLN-0023 (tenant portion), PLN-0030.
 
    **Acceptance:**
-  - Required tenant field in envelope header + bundle metadata; CDDL + Rust + dCBOR ordering pinned per ADR 0004.
-  - Verifier refuses when expected tenant != chain/bundle tenant; failure taxonomy distinct from hash/signature integrity.
-  - Vectors: tamper/0NN-tenant-mismatch, tamper/0NN-tenant-missing, cross-tenant export-bundle rejection.
+     - Required tenant field in envelope header + bundle metadata; CDDL + Rust + dCBOR ordering pinned per ADR 0004.
+     - Verifier refuses when expected tenant != chain/bundle tenant; failure taxonomy distinct from hash/signature integrity.
+     - Vectors: tamper/0NN-tenant-mismatch, tamper/0NN-tenant-missing, cross-tenant export-bundle rejection.
 
 <!-- tk:end -->
 
@@ -139,8 +139,8 @@ Export + recipient semantics that determine what auditors / procurement / regula
    Size M. Privacy Profile registers external systems as per-class recipients; ledgered wos.governance.access_granted/access_revoked events flow through custodyHook; recipient-rotation rule is per-event scope (past events keep existing key_bag immutably; future events scope to current recipients). Trellis-side: ingest new event types; clarify Companion §6.4 + §9.4 + §25.6 + §8.6 LedgerServiceWrapEntry re-wrap semantics; matrix explicit. Closes 'External recipient lifecycle' center commitment in VISION §V. Composes with wos.governance.* namespace ratification at parent PLN-0384. GATE: parent ratifies stack ADR per PLN-0382.
 
    **Acceptance:**
-  - Ingest wos.governance.access_granted/access_revoked event types; Companion §6.4 + §9.4 + §25.6 + §8.6 re-wrap semantics clarified; matrix explicit.
-  - Cross-stack fixture proves rotation across two events (PLN-0382 done-criterion).
+     - Ingest wos.governance.access_granted/access_revoked event types; Companion §6.4 + §9.4 + §25.6 + §8.6 re-wrap semantics clarified; matrix explicit.
+     - Cross-stack fixture proves rotation across two events (PLN-0382 done-criterion).
 
 **P3 — sustaining:**
 
@@ -149,8 +149,8 @@ Export + recipient semantics that determine what auditors / procurement / regula
    Size M. Core §22 case ledger composes sealed response-ledger heads with WOS governance events; Core §24 agency log is operator-maintained log of case-ledger heads. Envelope hooks stay reserved under ADR 0003 with MUST NOT populate until this lands. TRIGGER: case-ledger / agency-log scoping opens.
 
    **Acceptance:**
-  - Core §22 case-ledger and §24 agency-log semantics normatively defined; envelope hooks activated (ADR 0003 reservation lifts); verifier obligations + vectors land.
-  - TRIGGER: case-ledger / agency-log scoping use case surfaces.
+     - Core §22 case-ledger and §24 agency-log semantics normatively defined; envelope hooks activated (ADR 0003 reservation lifts); verifier obligations + vectors land.
+     - TRIGGER: case-ledger / agency-log scoping use case surfaces.
 
 - **Trellis #10 — Tenant-scope Trellis export shape (cross-ledger-scope bundle)** · `fs-peth` · P3
    blocked-by Trellis #8 — External recipient lifecycle: Trellis-side… `fs-p2su`
@@ -158,11 +158,11 @@ Export + recipient semantics that determine what auditors / procurement / regula
    Size M, Trigger. Coordinates parent PLN-0392. Core §18 ZIP layout is per-ledger_scope; tenant-scope spans many. Owner lean: option (a) — new 070-tenant-package-manifest.cbor cataloging constituent per-scope ZIPs with cross-binding digests. Alternative (b): top-level package format nesting per-scope exports. Signature-stack: tenant-scope export bundles span signed events across ledger scopes — procurement + audit may demand a single bundle. ACTIVATE TRIGGER: first tenant-scope export use case.
 
    **Acceptance:**
-  - Choice ratified (lean: option (a)).
-  - CDDL written.
-  - Fixture vector for one tenant spanning two ledger_scope's.
-  - Verifier accepts; secret-exclusion list (per ADR-0013 absorption) enforced.
-  - DEPENDS on item #8 (fs-p2su) — export must cover recipient-rotation events.
+     - Choice ratified (lean: option (a)).
+     - CDDL written.
+     - Fixture vector for one tenant spanning two ledger_scope's.
+     - Verifier accepts; secret-exclusion list (per ADR-0013 absorption) enforced.
+     - DEPENDS on item #8 (fs-p2su) — export must cover recipient-rotation events.
 
 <!-- tk:end -->
 
@@ -253,25 +253,25 @@ Quality-of-implementation work: parity guards extending with new vectors, certif
 
    Size S. Score [5/4/4]=20. Per Trellis ADR 0007 (as amended 2026-05-08 by ADR-0090): certificate-of-completion embeds VerificationReceipt for each signature in certificate's signature-event entries. Receipt is carried as COSE_Sign1 bytes alongside the UCA reference. Archived stack convergence plan: thoughts/archive/plans/2026-05-09-signature-wire-convergence-plan.md. GATE: receipt-bytes production lives in Formspec adapters (`fs-n6vp` WebCrypto, `fs-wxoz` ring, `fs-fmc9` Trellis-COSE) — the previously-named TRELLIS-FORMSPEC-SIGNATURE-ADAPTER-001 work was retired during stack convergence; Trellis embeds bytes once Formspec adapters produce them.
 
-   **Acceptance:** Settle single normative receipt location (UCA payload, certificate signature-event row, or both with one authoritative binding rule); update trellis.certificate-of-completion.v1 shape per spec; update Rust verification (`integrity-verify` / `trellis-verify-wos` certificate path) to validate receipt-aware certificates; update Python mirror; update trellis/specs/trellis-requirements-matrix.md with TR-CORE rows for receipt-bearing certificates.
+   **Acceptance:** Settle single normative receipt location (UCA payload, certificate signature-event row, or both with one authoritative binding rule); update trellis.certificate-of-completion.v1 shape per spec; update Rust verifier (trellis-verify certificate finalization) to validate receipt-aware certificate; update Python mirror; update trellis/specs/trellis-requirements-matrix.md with TR-CORE rows for receipt-bearing certificates.
 
 **P3 — sustaining:**
 
 - **Trellis #19a — TRELLIS-COSE-PRIMITIVE-BOUNDARY-001: clarify Trellis COSE substrate** `[6/3/5]=30` · `fs-j6am` · P3
 
-   Size S. Score [6/3/5]=30. `integrity-cose` owns shared COSE_Sign1 primitives; Trellis may retain thin `trellis-cose` shims over `integrity_cose` for legacy import paths. Export/offline verification consumes the same primitive surface through `integrity-verify` / `trellis-verify-wos`. Formspec detached-payload parsing re-exports the shared primitive through its compatibility crate.
+   Size S. Score [6/3/5]=30. trellis-cose currently re-exports shared COSE_Sign1 primitives used by Trellis event-signing construction and trellis-verify parsing. Formspec detached-payload parsing also re-exports same shared primitive through its compatibility crate.
 
    **Acceptance:** Keep Trellis-specific constructors and Formspec adapter policy layered above the shared primitive; add profile-equivalence vectors when new overlapping Sig_structure behavior lands.
 
 - **Trellis #20 — TRELLIS-003 residue: prev_hash write guard at append time** · `fs-ycws` · P3
 
-   Size XS. DDIA remediation landed sequence-continuity validation + SequenceGap error in both stores (store-postgres:371-397, store-memory:129-140) plus canonical_event_hash BYTEA NULL migration v3. prev_hash comparison between incoming event and predecessor's stored hash is explicitly DEFERRED: store-postgres/src/lib.rs:391 carries TODO(TRELLIS-003). StoredEvent does not yet carry prev_hash field; `integrity-verify` (Trellis export / chain verification) performs full prev_hash chain verification at read time (`integrity-stack/crates/integrity-verify`, failure kind `PrevHashMismatch`), so integrity guarantee holds — gap is defense-in-depth at write path. Land when StoredEvent gains prev_hash and append path can compare without schema-breaking migration.
+   Size XS. DDIA remediation landed sequence-continuity validation + SequenceGap error in both stores (store-postgres:371-397, store-memory:129-140) plus canonical_event_hash BYTEA NULL migration v3. prev_hash comparison between incoming event and predecessor's stored hash is explicitly DEFERRED: store-postgres/src/lib.rs:391 carries TODO(TRELLIS-003). StoredEvent does not yet carry prev_hash field; trellis-verify performs full prev_hash chain verification at read time (trellis-verify/src/lib.rs:647-670 + VerificationFailureKind::PrevHashMismatch), so integrity guarantee holds — gap is defense-in-depth at write path. Land when StoredEvent gains prev_hash and append path can compare without schema-breaking migration.
 
    **Acceptance:**
-  - Add prev_hash: Option<[u8;32]> to StoredEvent (backward-compatible).
-  - Compare incoming prev_hash against predecessor's canonical_event_hash in append_event_in_tx (both stores); emit PrevHashMismatch.
-  - Migration v4 adds prev_hash BYTEA NULL.
-  - Vectors: append with correct prev_hash, append with wrong prev_hash → PrevHashMismatch, append with no prev_hash → skip (backward-compat).
+     - Add prev_hash: Option<[u8;32]> to StoredEvent (backward-compatible).
+     - Compare incoming prev_hash against predecessor's canonical_event_hash in append_event_in_tx (both stores); emit PrevHashMismatch.
+     - Migration v4 adds prev_hash BYTEA NULL.
+     - Vectors: append with correct prev_hash, append with wrong prev_hash → PrevHashMismatch, append with no prev_hash → skip (backward-compat).
 
 **P4 — backlog / trigger-gated:**
 
