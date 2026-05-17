@@ -595,6 +595,27 @@ mod tests {
         assert_eq!(keys, vec!["a", "z"]);
     }
 
+    #[test]
+    fn signed_acts_projection_rejects_duplicate_nested_payload_keys() {
+        let event = signature_event_with_raw_consent_payload(Value::Map(vec![
+            (
+                Value::Text("a".to_string()),
+                Value::Text("first".to_string()),
+            ),
+            (
+                Value::Text("a".to_string()),
+                Value::Text("second".to_string()),
+            ),
+        ]));
+
+        let error = derive_signed_acts_catalog(&[event]).expect_err("duplicate key rejects");
+
+        assert!(
+            error.contains("duplicate canonical CBOR map key"),
+            "unexpected error: {error}"
+        );
+    }
+
     fn extension_for(catalog: &[u8]) -> Vec<u8> {
         encode_value(
             &text_map(vec![
@@ -620,7 +641,35 @@ mod tests {
     }
 
     fn signature_event_with_consent(consent_reference: Value) -> DomainEvent {
-        let payload = text_map(vec![
+        let payload = signature_payload_with_consent(consent_reference);
+        DomainEvent {
+            event_type: wos_signature_affirmation_event_type().to_string(),
+            payload: Some(encode_value(&payload).expect("payload cbor")),
+            canonical_event_hash: [0x11; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        }
+    }
+
+    fn signature_event_with_raw_consent_payload(consent_reference: Value) -> DomainEvent {
+        let payload = signature_payload_with_consent(consent_reference);
+        let mut payload_bytes = Vec::new();
+        ciborium::into_writer(&payload, &mut payload_bytes).expect("raw payload cbor");
+        DomainEvent {
+            event_type: wos_signature_affirmation_event_type().to_string(),
+            payload: Some(payload_bytes),
+            canonical_event_hash: [0x11; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        }
+    }
+
+    fn signature_payload_with_consent(consent_reference: Value) -> Value {
+        text_map(vec![
             (
                 "event",
                 Value::Text(wos_signature_affirmation_event_type().to_string()),
@@ -702,15 +751,6 @@ mod tests {
                 .expect("data"),
             ),
         ])
-        .expect("payload");
-        DomainEvent {
-            event_type: wos_signature_affirmation_event_type().to_string(),
-            payload: Some(encode_value(&payload).expect("payload cbor")),
-            canonical_event_hash: [0x11; 32],
-            authored_at: TrellisTimestamp {
-                seconds: 1,
-                nanos: 0,
-            },
-        }
+        .expect("payload")
     }
 }
