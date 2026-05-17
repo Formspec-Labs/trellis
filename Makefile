@@ -2,15 +2,15 @@
 #
 # Primary entry point for building and testing the Trellis integrity substrate.
 
-# Basic configuration
-PYTHON = python3
-CARGO = cargo
-PYTEST = $(PYTHON) -m pytest
-
 # Paths
 TRELLIS_PY_DIR = trellis-py
 SCRIPTS_DIR = scripts
 VECTORS_DIR = fixtures/vectors
+
+# Basic configuration
+PYTHON ?= $(if $(wildcard $(CURDIR)/$(TRELLIS_PY_DIR)/.venv/bin/python),$(CURDIR)/$(TRELLIS_PY_DIR)/.venv/bin/python,python3)
+CARGO = cargo
+PYTEST = $(PYTHON) -m pytest
 
 .PHONY: all help build test test-rust test-python test-scripts test-postgres check-specs check-specs-strict check-verifier-isolation lint fmt clean
 

@@ -13,6 +13,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,7 +45,7 @@ def run_lint_root(root: Path) -> subprocess.CompletedProcess:
     env.pop("TRELLIS_SKIP_COVERAGE", None)
     env["TRELLIS_LINT_ROOT"] = str(root)
     return subprocess.run(
-        ["python3", str(LINT)],
+        [sys.executable, str(LINT)],
         env=env,
         capture_output=True,
         text=True,
@@ -164,7 +165,7 @@ class TestPendingInvariantsAllowlist(unittest.TestCase):
         env["TRELLIS_SKIP_COVERAGE"] = "1"
         env["TRELLIS_LINT_ROOT"] = str(FIX / "missing-coverage")
         result = subprocess.run(
-            ["python3", str(LINT)], env=env, capture_output=True, text=True,
+            [sys.executable, str(LINT)], env=env, capture_output=True, text=True,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no vector covers", result.stderr.lower())
