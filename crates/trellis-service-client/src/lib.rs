@@ -362,7 +362,16 @@ pub struct SubstrateAppendResult {
 }
 
 impl SubstrateAppendResult {
-    fn validate_for(&self, scope: &str, event_type: &str) -> Result<(), StackError> {
+    /// Validates a response from the Trellis event-append endpoint.
+    ///
+    /// # Errors
+    /// Returns an error when the append response is outside the requested
+    /// scope, unverified, or not an event receipt for the requested event type.
+    pub fn validate_for_event_append(
+        &self,
+        scope: &str,
+        event_type: &str,
+    ) -> Result<(), StackError> {
         validate_required("event_id", &self.event_id)?;
         validate_required("canonical_event_hash", &self.canonical_event_hash)?;
         validate_required("checkpoint_ref", &self.checkpoint_ref)?;
@@ -376,6 +385,11 @@ impl SubstrateAppendResult {
         if !self.verification_receipt.verified {
             return Err(StackError::unavailable(
                 "trellis append response verification receipt is not verified",
+            ));
+        }
+        if self.verification_receipt.artifact_type != ArtifactType::Event {
+            return Err(StackError::unavailable(
+                "trellis append response verification artifactType is not event",
             ));
         }
         if self.verification_receipt.event_type != event_type {
@@ -567,7 +581,7 @@ impl SubstrateClient for TrellisServiceClient {
             .map_err(|error| {
                 StackError::unavailable(format!("trellis append response is invalid: {error}"))
             })?;
-        result.validate_for(&request.scope, &request.event_type)?;
+        result.validate_for_event_append(&request.scope, &request.event_type)?;
         Ok(result)
     }
 
@@ -835,8 +849,32 @@ mod tests {
 
         assert!(
             result
-                .validate_for("case_123", "wos.kernel.case_created")
+                .validate_for_event_append("case_123", "wos.kernel.case_created")
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn append_result_rejects_non_event_artifact_types() {
+        let result = SubstrateAppendResult {
+            event_id: "evt_1".to_string(),
+            sequence: 1,
+            canonical_event_hash: "sha256:abc".to_string(),
+            checkpoint_ref: "trellis://case_123/checkpoints/cp_1".to_string(),
+            bundle_ref: "s3://bucket/bundle.zip".to_string(),
+            verification_receipt: VerificationReceipt {
+                verified: true,
+                artifact_type: ArtifactType::Checkpoint,
+                event_type: "wos.kernel.case_created".to_string(),
+            },
+        };
+
+        let error = result
+            .validate_for_event_append("case_123", "wos.kernel.case_created")
+            .expect_err("append responses must carry event artifactType");
+        assert!(
+            error.to_string().contains("artifactType is not event"),
+            "unexpected error: {error}"
         );
     }
 
