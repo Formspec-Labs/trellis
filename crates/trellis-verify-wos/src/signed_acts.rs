@@ -4,7 +4,7 @@
 #![forbid(unsafe_code)]
 
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ciborium::Value;
 use integrity_verify::trellis::{DomainEvent, DomainExport, DomainFinding, Severity};
@@ -45,6 +45,12 @@ struct ProjectedAct {
     signed_at: String,
     first_source_ref: Vec<u8>,
     value: Value,
+}
+
+struct CorrelatedAct {
+    act: ProjectedAct,
+    compatibility_key: Vec<u8>,
+    source_refs: BTreeMap<Vec<u8>, Value>,
 }
 
 pub(crate) fn validate_signed_acts_projection(export: &DomainExport<'_>) -> Vec<DomainFinding> {
@@ -181,7 +187,6 @@ fn parse_signed_acts_export_extension(bytes: &[u8]) -> Result<SignedActsExportEx
 
 fn derive_signed_acts_catalog(events: &[DomainEvent]) -> Result<Vec<u8>, String> {
     let mut acts = Vec::new();
-    let mut seen_source_refs = BTreeSet::new();
     for event in events {
         if event.event_type == wos_signature_affirmation_event_type() {
             let payload = event.payload.as_deref().ok_or_else(|| {
@@ -209,21 +214,8 @@ fn derive_signed_acts_catalog(events: &[DomainEvent]) -> Result<Vec<u8>, String>
             acts.push(project_rejected_act(event, &record)?);
         }
     }
+    let mut acts = correlate_projected_acts(acts)?;
     acts.sort_by(compare_projected_acts);
-    for act in &acts {
-        let source_refs = act
-            .value
-            .as_map()
-            .and_then(|map| map_lookup_value(map, "source_refs"))
-            .and_then(Value::as_array)
-            .ok_or_else(|| "projected act source_refs missing".to_string())?;
-        for source_ref in source_refs {
-            let bytes = encode_value(source_ref)?;
-            if !seen_source_refs.insert(bytes) {
-                return Err("signed acts projection repeats a source_ref".to_string());
-            }
-        }
-    }
     let catalog = text_map(vec![
         ("projection_schema_version", uint(1)),
         (
@@ -236,6 +228,112 @@ fn derive_signed_acts_catalog(events: &[DomainEvent]) -> Result<Vec<u8>, String>
         ),
     ])?;
     encode_value(&catalog)
+}
+
+fn correlate_projected_acts(acts: Vec<ProjectedAct>) -> Result<Vec<ProjectedAct>, String> {
+    let mut by_act_id: BTreeMap<String, CorrelatedAct> = BTreeMap::new();
+    let mut seen_source_refs = BTreeSet::new();
+    for act in acts {
+        let compatibility_key = act_without_source_refs_key(&act.value)?;
+        let source_refs = source_refs_from_act(&act.value)?;
+        let mut refs = BTreeMap::new();
+        for source_ref in source_refs {
+            let duplicate_key = encode_value(&source_ref)?;
+            let key = source_ref_sort_key(&source_ref)?;
+            if !seen_source_refs.insert(duplicate_key) {
+                return Err("signed acts projection repeats a source_ref".to_string());
+            }
+            if refs.insert(key, source_ref).is_some() {
+                return Err("signed acts projection repeats a source_ref".to_string());
+            }
+        }
+        match by_act_id.get_mut(&act.act_id) {
+            Some(existing) if existing.compatibility_key != compatibility_key => {
+                return Err(format!(
+                    "act_correlation_conflict: act_id `{}` has incompatible projection fields",
+                    act.act_id
+                ));
+            }
+            Some(existing) => {
+                existing.source_refs.extend(refs);
+            }
+            None => {
+                by_act_id.insert(
+                    act.act_id.clone(),
+                    CorrelatedAct {
+                        act,
+                        compatibility_key,
+                        source_refs: refs,
+                    },
+                );
+            }
+        }
+    }
+
+    by_act_id
+        .into_values()
+        .map(|correlated| {
+            let source_refs = correlated.source_refs.into_values().collect::<Vec<_>>();
+            let first_source_ref = source_refs
+                .first()
+                .ok_or_else(|| "projected act source_refs missing".to_string())?;
+            let first_source_ref = encode_value(first_source_ref)?;
+            let value = replace_source_refs(&correlated.act.value, Value::Array(source_refs))?;
+            Ok(ProjectedAct {
+                act_id: correlated.act.act_id,
+                signed_at: correlated.act.signed_at,
+                first_source_ref,
+                value,
+            })
+        })
+        .collect()
+}
+
+fn act_without_source_refs_key(value: &Value) -> Result<Vec<u8>, String> {
+    let map = value
+        .as_map()
+        .ok_or_else(|| "projected act is not a map".to_string())?;
+    let filtered = map
+        .iter()
+        .filter(|(key, _)| key.as_text() != Some("source_refs"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    encode_value(&Value::Map(filtered))
+}
+
+fn source_refs_from_act(value: &Value) -> Result<Vec<Value>, String> {
+    let source_refs = value
+        .as_map()
+        .and_then(|map| map_lookup_value(map, "source_refs"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| "projected act source_refs missing".to_string())
+        .cloned()?;
+    if source_refs.is_empty() {
+        return Err("projected act source_refs missing".to_string());
+    }
+    Ok(source_refs)
+}
+
+fn replace_source_refs(value: &Value, source_refs: Value) -> Result<Value, String> {
+    let map = value
+        .as_map()
+        .ok_or_else(|| "projected act is not a map".to_string())?;
+    let mut found = false;
+    let replaced = map
+        .iter()
+        .map(|(key, value)| {
+            if key.as_text() == Some("source_refs") {
+                found = true;
+                (key.clone(), source_refs.clone())
+            } else {
+                (key.clone(), value.clone())
+            }
+        })
+        .collect();
+    if !found {
+        return Err("projected act source_refs missing".to_string());
+    }
+    Ok(Value::Map(replaced))
 }
 
 fn project_admitted_act(
@@ -741,6 +839,133 @@ mod tests {
         );
     }
 
+    #[test]
+    fn signed_acts_act_correlation_merges_compatible_source_refs() {
+        let acts = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x22),
+            projected_act("act-1", "signer-1", 0x11),
+        ])
+        .expect("correlate acts");
+
+        assert_eq!(acts.len(), 1);
+        let source_refs = source_refs_from_act(&acts[0].value).expect("source refs");
+        assert_eq!(source_refs.len(), 2);
+        assert_eq!(
+            encode_source_ref(0x11),
+            encode_value(&source_refs[0]).unwrap()
+        );
+        assert_eq!(
+            encode_source_ref(0x22),
+            encode_value(&source_refs[1]).unwrap()
+        );
+    }
+
+    #[test]
+    fn signed_acts_act_correlation_rejects_incompatible_duplicate_act_id() {
+        let error = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x11),
+            projected_act("act-1", "signer-2", 0x22),
+        ])
+        .expect_err("incompatible act ids must conflict");
+
+        assert!(error.contains("act_correlation_conflict"), "{error}");
+    }
+
+    #[test]
+    fn signed_acts_act_correlation_rejects_duplicate_source_ref_across_act_ids() {
+        let error = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x11),
+            projected_act("act-2", "signer-1", 0x11),
+        ])
+        .expect_err("duplicate source refs must conflict");
+
+        assert!(
+            error.contains("signed acts projection repeats a source_ref"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn signed_acts_derivation_merges_compatible_duplicate_act_ids() {
+        let events = [
+            signature_event_with_signer_and_hash("signer-1", 0x22),
+            signature_event_with_signer_and_hash("signer-1", 0x11),
+        ];
+
+        let catalog = derive_signed_acts_catalog(&events).expect("derive");
+        let decoded = decode_value(&catalog).expect("decode derived catalog");
+        let root = decoded.as_map().expect("catalog root");
+        let acts = map_lookup_value(root, "acts")
+            .and_then(Value::as_array)
+            .expect("acts");
+
+        assert_eq!(acts.len(), 1);
+        let act = acts[0].as_map().expect("act");
+        let source_refs = map_lookup_value(act, "source_refs")
+            .and_then(Value::as_array)
+            .expect("source refs");
+        assert_eq!(source_refs.len(), 2);
+        assert_eq!(
+            encode_source_ref(0x11),
+            encode_value(&source_refs[0]).unwrap()
+        );
+        assert_eq!(
+            encode_source_ref(0x22),
+            encode_value(&source_refs[1]).unwrap()
+        );
+    }
+
+    #[test]
+    fn signed_acts_act_correlation_conflict_fails_validator_domain_path() {
+        let events = [
+            signature_event_with_signer_and_hash("signer-1", 0x11),
+            signature_event_with_signer_and_hash("signer-2", 0x22),
+        ];
+        let catalog = encode_value(
+            &text_map(vec![
+                ("projection_schema_version", uint(1)),
+                (
+                    "derivation_rule_id",
+                    Value::Text(SIGNED_ACTS_DERIVATION_RULE.to_string()),
+                ),
+                ("acts", Value::Array(Vec::new())),
+            ])
+            .expect("catalog"),
+        )
+        .expect("encode");
+        let extension = extension_for(&catalog);
+        let mut members = BTreeMap::new();
+        members.insert(SIGNED_ACTS_MEMBER.to_string(), catalog);
+        let mut manifest_extensions = BTreeMap::new();
+        manifest_extensions.insert(SIGNED_ACTS_EXPORT_EXTENSION.to_string(), extension);
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &events,
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        assert!(
+            findings.iter().any(|finding| {
+                finding.kind == "signed_acts_catalog_invalid"
+                    && finding.message.contains("act_correlation_conflict")
+            }),
+            "{findings:#?}"
+        );
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.kind != "signed_acts_projection_mismatch"),
+            "{findings:#?}"
+        );
+    }
+
+    fn encode_source_ref(source_byte: u8) -> Vec<u8> {
+        let event = signature_event_with_signer_and_hash("signer-1", source_byte);
+        let source_ref = source_ref(&event, "signature-affirmation").expect("source ref");
+        encode_value(&source_ref).expect("source ref bytes")
+    }
+
     fn extension_for(catalog: &[u8]) -> Vec<u8> {
         extension_for_rule(catalog, SIGNED_ACTS_DERIVATION_RULE)
     }
@@ -761,9 +986,36 @@ mod tests {
     }
 
     fn signature_event() -> DomainEvent {
-        signature_event_with_consent(
-            text_map(vec![("ref", Value::Text("consent-1".to_string()))]).expect("consent"),
-        )
+        signature_event_with_signer_and_hash("signer-1", 0x11)
+    }
+
+    fn projected_act(act_id: &str, signer: &str, source_byte: u8) -> ProjectedAct {
+        let event = DomainEvent {
+            event_type: wos_signature_affirmation_event_type().to_string(),
+            payload: None,
+            canonical_event_hash: [source_byte; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        };
+        let source_ref = source_ref(&event, "signature-affirmation").expect("source ref");
+        let value = text_map(vec![
+            ("act_id", Value::Text(act_id.to_string())),
+            ("signer", Value::Text(signer.to_string())),
+            ("signed_at", Value::Text("2026-05-17T00:00:00Z".to_string())),
+            (
+                "source_refs",
+                sorted_source_refs(vec![source_ref.clone()]).expect("source refs"),
+            ),
+        ])
+        .expect("act value");
+        ProjectedAct {
+            act_id: act_id.to_string(),
+            signed_at: "2026-05-17T00:00:00Z".to_string(),
+            first_source_ref: encode_value(&source_ref).expect("source ref key"),
+            value,
+        }
     }
 
     fn signature_event_with_consent(consent_reference: Value) -> DomainEvent {
@@ -772,6 +1024,21 @@ mod tests {
             event_type: wos_signature_affirmation_event_type().to_string(),
             payload: Some(encode_value(&payload).expect("payload cbor")),
             canonical_event_hash: [0x11; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        }
+    }
+
+    fn signature_event_with_signer_and_hash(signer_id: &str, source_byte: u8) -> DomainEvent {
+        let consent_reference =
+            text_map(vec![("ref", Value::Text("consent-1".to_string()))]).expect("consent");
+        let payload = signature_payload_with_consent_and_signer(consent_reference, signer_id);
+        DomainEvent {
+            event_type: wos_signature_affirmation_event_type().to_string(),
+            payload: Some(encode_value(&payload).expect("payload cbor")),
+            canonical_event_hash: [source_byte; 32],
             authored_at: TrellisTimestamp {
                 seconds: 1,
                 nanos: 0,
@@ -795,6 +1062,13 @@ mod tests {
     }
 
     fn signature_payload_with_consent(consent_reference: Value) -> Value {
+        signature_payload_with_consent_and_signer(consent_reference, "signer-1")
+    }
+
+    fn signature_payload_with_consent_and_signer(
+        consent_reference: Value,
+        signer_id: &str,
+    ) -> Value {
         text_map(vec![
             (
                 "event",
@@ -803,7 +1077,7 @@ mod tests {
             (
                 "data",
                 text_map(vec![
-                    ("signerId", Value::Text("signer-1".to_string())),
+                    ("signerId", Value::Text(signer_id.to_string())),
                     ("roleId", Value::Text("applicant".to_string())),
                     ("role", Value::Text("Applicant".to_string())),
                     ("documentId", Value::Text("doc-1".to_string())),

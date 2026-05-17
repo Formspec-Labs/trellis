@@ -140,6 +140,55 @@ def test_signed_acts_unknown_derivation_rule_is_failure_without_v1_fallback() ->
     )
 
 
+def test_signed_acts_act_correlation_merges_compatible_source_refs() -> None:
+    acts = verify_wos._correlate_projected_acts(  # noqa: SLF001
+        [
+            _projected_act("act-1", "signer-1", b"\x22" * 32),
+            _projected_act("act-1", "signer-1", b"\x11" * 32),
+        ]
+    )
+
+    assert len(acts) == 1
+    assert len(acts[0]["source_refs"]) == 2
+    assert acts[0]["source_refs"][0]["ref"] == b"\x11" * 32
+    assert acts[0]["source_refs"][1]["ref"] == b"\x22" * 32
+
+
+def test_signed_acts_act_correlation_rejects_incompatible_duplicate_id() -> None:
+    with pytest.raises(core.VerifyError, match="act_correlation_conflict"):
+        verify_wos._correlate_projected_acts(  # noqa: SLF001
+            [
+                _projected_act("act-1", "signer-1", b"\x11" * 32),
+                _projected_act("act-1", "signer-2", b"\x22" * 32),
+            ]
+        )
+
+
+def test_signed_acts_act_correlation_rejects_duplicate_source_ref_across_ids() -> None:
+    with pytest.raises(core.VerifyError, match="repeats a source_ref"):
+        verify_wos._correlate_projected_acts(  # noqa: SLF001
+            [
+                _projected_act("act-1", "signer-1", b"\x11" * 32),
+                _projected_act("act-2", "signer-1", b"\x11" * 32),
+            ]
+        )
+
+
+def _projected_act(act_id: str, signer: str, source_ref: bytes) -> dict[str, object]:
+    return {
+        "act_id": act_id,
+        "signer": signer,
+        "signed_at": "2026-05-17T00:00:00Z",
+        "source_refs": [
+            {
+                "layer": "wos",
+                "kind": "signature-affirmation",
+                "ref": source_ref,
+            }
+        ],
+    }
+
+
 def test_signed_acts_unknown_derivation_rule_blocks_public_verdict() -> None:
     export_zip = (
         TRELLIS_ROOT

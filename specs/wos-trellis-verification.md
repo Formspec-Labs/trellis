@@ -81,8 +81,8 @@ These literals MUST NOT be required by a Trellis Core verifier.
 | WOS-TV-015 | The `trellis.export.signed-acts.v1` extension MUST be a CBOR map carrying `catalog_digest`, `catalog_ref = "066-signed-acts.cbor"`, and `derivation_rule`. The `derivation_rule` value MUST resolve to a verifier-registered derivation rule; today's registry contains `signed-act-projection-wos-formspec-v1`. Invalid extension shape, an unsupported derivation rule, or an invalid catalog member is `signed_acts_catalog_invalid`; absent member is `missing_signed_acts_catalog`. |
 | WOS-TV-016 | The SHA-256 digest of `066-signed-acts.cbor` MUST equal `catalog_digest`. A mismatch is `signed_acts_catalog_digest_mismatch`. |
 | WOS-TV-017 | The WOS validator MUST deterministically rederive the SignedAct catalog from every readable exported `wos.kernel.signature_affirmation` and `wos.kernel.signature_admission_failed` event. The committed member MUST byte-equal that derivation. A mismatch is `signed_acts_projection_mismatch`. |
-| WOS-TV-018 | The SignedAct catalog root MUST be canonical CBOR with `projection_schema_version = 1`, `derivation_rule_id = "signed-act-projection-wos-formspec-v1"`, and `acts`. Rows MUST be sorted by `(act_id, signed_at, first source_ref canonical bytes)`, and every `source_refs` entry MUST be unique across the catalog. |
-| WOS-TV-019 | A SignedAct row derived from `wos.kernel.signature_affirmation` MUST project signer, bound subject, intent, consent, admission, witness, timestamp, and source-reference fields from the signed WOS record only; missing `signingIntent` is a closed failure, not an advisory. |
+| WOS-TV-018 | The SignedAct catalog root MUST be canonical CBOR with `projection_schema_version = 1`, `derivation_rule_id = "signed-act-projection-wos-formspec-v1"`, and `acts`. Projected rows that share an `act_id` MUST be correlated before row sorting: rows with identical projected fields except `source_refs` merge their `source_refs`, while rows with divergent projected fields make the catalog invalid with `act_correlation_conflict` detail. Rows MUST be sorted by `(act_id, signed_at, first source_ref canonical bytes)`, and every `source_refs` entry MUST be unique across the catalog. |
+| WOS-TV-019 | A SignedAct row derived from `wos.kernel.signature_affirmation` MUST project `act_id` from `data.signingActId` and signer, bound subject, intent, consent, admission, witness, timestamp, and source-reference fields from the signed WOS record only; missing `signingIntent` is a closed failure, not an advisory. |
 | WOS-TV-020 | A SignedAct row derived from `wos.kernel.signature_admission_failed` MUST set `admission.outcome = "rejected"` and carry the failure reason and evidence-binding values from the signed WOS record. |
 | WOS-TV-021 | `066-signed-acts.cbor` is a verifier/reporting projection only. A WOS validator MUST NOT accept a signature, failure, signer, response reference, or bound-subject claim solely because it appears in the projection; the signed source event remains the authority. |
 | WOS-TV-022 | If `trellis.export.policy-closure.v1` is present, `067-policy-closure.cbor` MUST be present. If `067-policy-closure.cbor` is present without the extension, the WOS validator MUST report `policy_closure_unbound`. |
@@ -128,6 +128,13 @@ evidence-binding values needed to identify the rejected response/signature.
 `ref = canonical_event_hash`. Source refs are sorted by `(layer, kind, ref)`
 using canonical CBOR bytes for `ref`; catalog rows are sorted by
 `(act_id, signed_at, first source_ref canonical bytes)`.
+
+Before row sorting, derived acts are correlated by `act_id`. If two source rows
+produce the same `act_id` and the same projected fields except `source_refs`,
+the catalog carries one row with the sorted union of source refs. If the same
+`act_id` has divergent projected fields, the catalog is invalid as
+`signed_acts_catalog_invalid` with `act_correlation_conflict` diagnostic
+detail. Exact duplicate `source_refs` remain invalid across the catalog.
 
 Nulls are explicit. A missing optional WOS source field projects as `null`.
 Malformed required fields fail the projection. No relying party may treat the

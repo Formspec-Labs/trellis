@@ -9,7 +9,7 @@
 #![forbid(unsafe_code)]
 
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use integrity_cbor::{
     Value, decode_cbor_value, map_lookup_bytes, map_lookup_map, map_lookup_optional_text,
@@ -61,6 +61,12 @@ struct ProjectedAct {
     signed_at: String,
     first_source_ref: Vec<u8>,
     value: Value,
+}
+
+struct CorrelatedAct {
+    act: ProjectedAct,
+    compatibility_key: Vec<u8>,
+    source_refs: BTreeMap<Vec<u8>, Value>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,7 +148,6 @@ fn signed_acts_catalog(
     events: &[StoredEvent],
 ) -> Result<Option<SignedActsDerivation>, StackError> {
     let mut acts = Vec::new();
-    let mut seen_source_refs = BTreeSet::new();
     let mut policy_closure_eligible = true;
     let signature_affirmation = wos_signature_affirmation_event_type();
     let signature_admission_failed = wos_signature_admission_failed_event_type();
@@ -174,23 +179,8 @@ fn signed_acts_catalog(
     if acts.is_empty() {
         return Ok(None);
     }
+    let mut acts = correlate_projected_acts(acts)?;
     acts.sort_by(compare_projected_acts);
-    for act in &acts {
-        let source_refs = act
-            .value
-            .as_map()
-            .and_then(|map| map_lookup_optional_value(map, "source_refs"))
-            .and_then(Value::as_array)
-            .ok_or_else(|| StackError::internal("projected act source_refs missing"))?;
-        for source_ref in source_refs {
-            let bytes = crate::encode_value(source_ref)?;
-            if !seen_source_refs.insert(bytes) {
-                return Err(StackError::bad_request(
-                    "signed acts projection repeats a source_ref",
-                ));
-            }
-        }
-    }
     let catalog = crate::text_map(vec![
         ("projection_schema_version", crate::uint(1)),
         (
@@ -206,6 +196,116 @@ fn signed_acts_catalog(
         bytes: crate::encode_value(&catalog)?,
         policy_closure_eligible,
     }))
+}
+
+fn correlate_projected_acts(acts: Vec<ProjectedAct>) -> Result<Vec<ProjectedAct>, StackError> {
+    let mut by_act_id: BTreeMap<String, CorrelatedAct> = BTreeMap::new();
+    let mut seen_source_refs = BTreeSet::new();
+    for act in acts {
+        let compatibility_key = act_without_source_refs_key(&act.value)?;
+        let source_refs = source_refs_from_act(&act.value)?;
+        let mut refs = BTreeMap::new();
+        for source_ref in source_refs {
+            let duplicate_key = crate::encode_value(&source_ref)?;
+            let key = source_ref_sort_key(&source_ref)?;
+            if !seen_source_refs.insert(duplicate_key) {
+                return Err(StackError::bad_request(
+                    "signed acts projection repeats a source_ref",
+                ));
+            }
+            if refs.insert(key, source_ref).is_some() {
+                return Err(StackError::bad_request(
+                    "signed acts projection repeats a source_ref",
+                ));
+            }
+        }
+        match by_act_id.get_mut(&act.act_id) {
+            Some(existing) if existing.compatibility_key != compatibility_key => {
+                return Err(StackError::bad_request(format!(
+                    "act_correlation_conflict: act_id `{}` has incompatible projection fields",
+                    act.act_id
+                )));
+            }
+            Some(existing) => {
+                existing.source_refs.extend(refs);
+            }
+            None => {
+                by_act_id.insert(
+                    act.act_id.clone(),
+                    CorrelatedAct {
+                        act,
+                        compatibility_key,
+                        source_refs: refs,
+                    },
+                );
+            }
+        }
+    }
+
+    by_act_id
+        .into_values()
+        .map(|correlated| {
+            let source_refs = correlated.source_refs.into_values().collect::<Vec<_>>();
+            let first_source_ref = source_refs
+                .first()
+                .ok_or_else(|| StackError::internal("projected act source_refs missing"))?;
+            let first_source_ref = crate::encode_value(first_source_ref)?;
+            let value = replace_source_refs(&correlated.act.value, Value::Array(source_refs))?;
+            Ok(ProjectedAct {
+                act_id: correlated.act.act_id,
+                signed_at: correlated.act.signed_at,
+                first_source_ref,
+                value,
+            })
+        })
+        .collect()
+}
+
+fn act_without_source_refs_key(value: &Value) -> Result<Vec<u8>, StackError> {
+    let map = value
+        .as_map()
+        .ok_or_else(|| StackError::internal("projected act is not a map"))?;
+    let filtered = map
+        .iter()
+        .filter(|(key, _)| key.as_text() != Some("source_refs"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    crate::encode_value(&Value::Map(filtered))
+}
+
+fn source_refs_from_act(value: &Value) -> Result<Vec<Value>, StackError> {
+    let source_refs = value
+        .as_map()
+        .and_then(|map| map_lookup_optional_value(map, "source_refs"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| StackError::internal("projected act source_refs missing"))
+        .cloned()?;
+    if source_refs.is_empty() {
+        return Err(StackError::internal("projected act source_refs missing"));
+    }
+    Ok(source_refs)
+}
+
+fn replace_source_refs(value: &Value, source_refs: Value) -> Result<Value, StackError> {
+    let map = value
+        .as_map()
+        .ok_or_else(|| StackError::internal("projected act is not a map"))?;
+    let mut found = false;
+    let replaced = map
+        .iter()
+        .map(|(key, value)| {
+            if key.as_text() == Some("source_refs") {
+                found = true;
+                (key.clone(), source_refs.clone())
+            } else {
+                (key.clone(), value.clone())
+            }
+        })
+        .collect();
+    if !found {
+        return Err(StackError::internal("projected act source_refs missing"));
+    }
+    Ok(Value::Map(replaced))
 }
 
 fn signature_affirmation_policy_covered(record: &SignatureAffirmationRecordDetails) -> bool {
@@ -671,4 +771,85 @@ fn require_event(
 
 fn cbor_bad_request(error: integrity_cbor::CborHelperError) -> StackError {
     StackError::bad_request(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn act_correlation_merges_compatible_source_refs() {
+        let acts = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x22),
+            projected_act("act-1", "signer-1", 0x11),
+        ])
+        .expect("correlate acts");
+
+        assert_eq!(acts.len(), 1);
+        let source_refs = source_refs_from_act(&acts[0].value).expect("source refs");
+        assert_eq!(source_refs.len(), 2);
+        assert_eq!(
+            encode_source_ref(0x11),
+            crate::encode_value(&source_refs[0]).unwrap()
+        );
+        assert_eq!(
+            encode_source_ref(0x22),
+            crate::encode_value(&source_refs[1]).unwrap()
+        );
+    }
+
+    #[test]
+    fn act_correlation_rejects_incompatible_duplicate_act_id() {
+        let error = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x11),
+            projected_act("act-1", "signer-2", 0x22),
+        ])
+        .expect_err("incompatible act ids must conflict");
+
+        assert_eq!(error.code().as_str(), "INFRA-4000");
+        assert!(error.to_string().contains("act_correlation_conflict"));
+    }
+
+    #[test]
+    fn act_correlation_rejects_duplicate_source_ref_across_act_ids() {
+        let error = correlate_projected_acts(vec![
+            projected_act("act-1", "signer-1", 0x11),
+            projected_act("act-2", "signer-1", 0x11),
+        ])
+        .expect_err("duplicate source refs must conflict");
+
+        assert_eq!(error.code().as_str(), "INFRA-4000");
+        assert!(
+            error
+                .to_string()
+                .contains("signed acts projection repeats a source_ref")
+        );
+    }
+
+    fn encode_source_ref(source_byte: u8) -> Vec<u8> {
+        let source_ref =
+            source_ref([source_byte; 32], "signature-affirmation").expect("source ref");
+        crate::encode_value(&source_ref).expect("source ref bytes")
+    }
+
+    fn projected_act(act_id: &str, signer: &str, source_byte: u8) -> ProjectedAct {
+        let source_ref =
+            source_ref([source_byte; 32], "signature-affirmation").expect("source ref");
+        let value = crate::text_map(vec![
+            ("act_id", Value::Text(act_id.to_string())),
+            ("signer", Value::Text(signer.to_string())),
+            ("signed_at", Value::Text("2026-05-17T00:00:00Z".to_string())),
+            (
+                "source_refs",
+                sorted_source_refs(vec![source_ref.clone()]).expect("source refs"),
+            ),
+        ])
+        .expect("act value");
+        ProjectedAct {
+            act_id: act_id.to_string(),
+            signed_at: "2026-05-17T00:00:00Z".to_string(),
+            first_source_ref: crate::encode_value(&source_ref).expect("source ref key"),
+            value,
+        }
+    }
 }

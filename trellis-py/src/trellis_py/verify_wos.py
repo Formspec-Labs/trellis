@@ -667,7 +667,6 @@ def _derive_signed_acts_catalog_v1(
     events: list[core.ParsedSign1], payload_blobs: dict[bytes, bytes]
 ) -> bytes:
     acts: list[dict[str, Any]] = []
-    seen_source_refs: set[bytes] = set()
     for event in events:
         details = _event_details(event)
         if details is None:
@@ -693,6 +692,7 @@ def _derive_signed_acts_catalog_v1(
             )
             acts.append(_project_rejected_act(details, record))
 
+    acts = _correlate_projected_acts(acts)
     acts.sort(
         key=lambda act: (
             str(act["act_id"]),
@@ -700,12 +700,6 @@ def _derive_signed_acts_catalog_v1(
             cbor2.dumps(act["source_refs"][0], canonical=True),
         )
     )
-    for act in acts:
-        for source_ref in act["source_refs"]:
-            source_ref_bytes = cbor2.dumps(source_ref, canonical=True)
-            if source_ref_bytes in seen_source_refs:
-                raise core.VerifyError("signed acts projection repeats a source_ref")
-            seen_source_refs.add(source_ref_bytes)
     return cbor2.dumps(
         {
             "projection_schema_version": 1,
@@ -714,6 +708,45 @@ def _derive_signed_acts_catalog_v1(
         },
         canonical=True,
     )
+
+
+def _correlate_projected_acts(acts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    correlated: dict[str, tuple[bytes, dict[bytes, dict[str, Any]], dict[str, Any]]] = {}
+    seen_source_refs: set[bytes] = set()
+    for act in acts:
+        act_id = str(act["act_id"])
+        compatibility_key = cbor2.dumps(
+            {key: value for key, value in act.items() if key != "source_refs"},
+            canonical=True,
+        )
+        source_refs = act.get("source_refs")
+        if not isinstance(source_refs, list) or not source_refs:
+            raise core.VerifyError("projected act source_refs missing")
+        if act_id in correlated:
+            existing_key, existing_refs, existing_act = correlated[act_id]
+            if existing_key != compatibility_key:
+                raise core.VerifyError(
+                    f"act_correlation_conflict: act_id `{act_id}` has incompatible projection fields"
+                )
+        else:
+            existing_refs = {}
+            existing_act = dict(act)
+            correlated[act_id] = (compatibility_key, existing_refs, existing_act)
+        for source_ref in source_refs:
+            duplicate_key = cbor2.dumps(source_ref, canonical=True)
+            if duplicate_key in seen_source_refs:
+                raise core.VerifyError("signed acts projection repeats a source_ref")
+            seen_source_refs.add(duplicate_key)
+            source_ref_key = _source_ref_sort_key(source_ref)
+            if source_ref_key in existing_refs:
+                raise core.VerifyError("signed acts projection repeats a source_ref")
+            existing_refs[source_ref_key] = source_ref
+
+    merged: list[dict[str, Any]] = []
+    for _compatibility_key, source_refs, act in correlated.values():
+        act["source_refs"] = [source_refs[key] for key in sorted(source_refs)]
+        merged.append(act)
+    return merged
 
 
 def _project_admitted_act(
@@ -822,11 +855,15 @@ def _source_ref(details: core.EventDetails, kind: str) -> dict[str, Any]:
 def _sorted_source_refs(source_refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(
         source_refs,
-        key=lambda ref: (
-            str(ref["layer"]),
-            str(ref["kind"]),
-            cbor2.dumps(ref["ref"], canonical=True),
-        ),
+        key=_source_ref_sort_key,
+    )
+
+
+def _source_ref_sort_key(ref: dict[str, Any]) -> tuple[str, str, bytes]:
+    return (
+        str(ref["layer"]),
+        str(ref["kind"]),
+        cbor2.dumps(ref["ref"], canonical=True),
     )
 
 
