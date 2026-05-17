@@ -1263,21 +1263,19 @@ class WosFormspecResolver:
         self, payload_bytes: bytes
     ) -> Optional[core.CertificateResponseProof]:
         try:
-            record = _parse_signature_affirmation_record(
-                payload_bytes, WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE
-            )
+            value = core._decode_value(payload_bytes)
+            if not isinstance(value, dict):
+                return None
+            data = core._map_lookup_map(value, "data")
         except core.VerifyError:
             return None
-        # When the record declares `signedPayloadDigestAlgorithm = "sha-256"`
-        # but the digest text is not 32 bytes of hex, fail closed via
-        # `MalformedResponseDigestError`. When the record carries no
-        # sha-256 signed-payload digest at all (and no parseable legacy
-        # `formspecResponseRef`/`sourceResponseRef`), silent-skip — the
-        # payload is not a response-proof carrier this resolver can
-        # interpret. Phase N narrows the silent-skip path to the
-        # absent-digest case only.
-        if record.get("signed_payload_digest_algorithm") == "sha-256":
-            digest_text = record.get("signed_payload_digest")
+
+        # Keep this resolver intentionally narrower than the full
+        # SignatureAffirmation parser: certificate response-proof checks only
+        # need the response digest fields, and older ADR 0007 fixtures predate
+        # later signed-act fields such as `signingActId`.
+        if data.get("signedPayloadDigestAlgorithm") == "sha-256":
+            digest_text = data.get("signedPayloadDigest")
             if isinstance(digest_text, str):
                 try:
                     digest = core._parse_sha256_hex(digest_text)
@@ -1287,20 +1285,25 @@ class WosFormspecResolver:
                         f"sha-256 hex format (expected 64 hex chars)"
                     ) from exc
                 return core.CertificateResponseProof(response_hash=digest)
+
+        response_ref = data.get("formspecResponseRef")
+        if not isinstance(response_ref, str):
+            return None
         try:
-            digest = _signature_affirmation_response_digest(record)
-        except core.VerifyError:
+            digest = core._parse_sha256_prefix_text(response_ref)
+        except (core.VerifyError, ValueError):
             return None
         return core.CertificateResponseProof(response_hash=digest)
 
     def resolve_principal_ref(self, payload_bytes: bytes) -> Optional[str]:
         try:
-            record = _parse_signature_affirmation_record(
-                payload_bytes, WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE
-            )
+            value = core._decode_value(payload_bytes)
+            if not isinstance(value, dict):
+                return None
+            data = core._map_lookup_map(value, "data")
         except core.VerifyError:
             return None
-        signer_id = record.get("signer_id")
+        signer_id = data.get("signerId")
         if isinstance(signer_id, str):
             return signer_id
         return None

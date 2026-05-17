@@ -133,6 +133,81 @@ def test_policy_closure_digest_mismatch_blocks_domain_verdict() -> None:
     assert report.integrity_verified is False
 
 
+def test_wos_resolver_reads_response_digest_without_full_signed_act_shape() -> None:
+    payload = cbor2.dumps(
+        {
+            "event": verify_wos.WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE,
+            "data": {
+                "signerId": "applicant",
+                "signedPayloadDigestAlgorithm": "sha-256",
+                "signedPayloadDigest": "12" * 32,
+            },
+        }
+    )
+
+    resolver = verify_wos.WosFormspecResolver()
+    proof = resolver.resolve(payload)
+
+    assert proof is not None
+    assert proof.response_hash == bytes.fromhex("12" * 32)
+    assert resolver.resolve_principal_ref(payload) == "applicant"
+
+
+def test_wos_resolver_malformed_response_digest_fails_closed() -> None:
+    payload = cbor2.dumps(
+        {
+            "event": verify_wos.WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE,
+            "data": {
+                "signedPayloadDigestAlgorithm": "sha-256",
+                "signedPayloadDigest": "ZZ" * 32,
+            },
+        }
+    )
+
+    with pytest.raises(core.MalformedResponseDigestError):
+        verify_wos.WosFormspecResolver().resolve(payload)
+
+
+def test_certificate_response_ref_mismatch_fixture_fails_substrate_verification() -> None:
+    export_zip = (
+        TRELLIS_ROOT
+        / "fixtures/vectors/tamper/024-cert-response-ref-mismatch/input-export.zip"
+    ).read_bytes()
+
+    report = verify_wos.verify_export_zip(export_zip)
+
+    assert report.substrate.structure_verified is True
+    assert report.substrate.integrity_verified is False
+    assert any(
+        failure.kind == "response_ref_mismatch"
+        for failure in report.substrate.event_failures
+    )
+    assert any(
+        "response_ref_mismatch" in outcome.failures
+        for outcome in report.substrate.certificates_of_completion
+    )
+
+
+def test_certificate_malformed_response_digest_fixture_fails_substrate_verification() -> None:
+    export_zip = (
+        TRELLIS_ROOT
+        / "fixtures/vectors/tamper/052-cert-response-ref-malformed-digest/input-export.zip"
+    ).read_bytes()
+
+    report = verify_wos.verify_export_zip(export_zip)
+
+    assert report.substrate.structure_verified is True
+    assert report.substrate.integrity_verified is False
+    assert any(
+        failure.kind == "malformed_response_digest"
+        for failure in report.substrate.event_failures
+    )
+    assert any(
+        "malformed_response_digest" in outcome.failures
+        for outcome in report.substrate.certificates_of_completion
+    )
+
+
 def test_signature_admission_failed_export_projects_rejected_signed_act() -> None:
     export_dir = (
         TRELLIS_ROOT
