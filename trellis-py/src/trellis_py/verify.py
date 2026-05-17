@@ -4188,6 +4188,11 @@ def _parse_signature_catalog_entries(data: bytes) -> list[dict[str, Any]]:
                 "source_response_ref": _map_lookup_str_alias(
                     entry, "source_response_ref", "formspec_response_ref"
                 ),
+                "signing_act_id": str(_map_lookup_str(entry, "signing_act_id")),
+                "presentation_hash": str(_map_lookup_str(entry, "presentation_hash")),
+                "witnessed_signature_ref": _optional_str_entry(
+                    entry, "witnessed_signature_ref"
+                ),
             }
         )
     return rows
@@ -4231,6 +4236,12 @@ def _signature_entry_matches_record(entry: dict[str, Any], record: dict[str, Any
     if entry["profile_key"] != record["profile_key"]:
         return False
     if entry["source_response_ref"] != record["source_response_ref"]:
+        return False
+    if entry["signing_act_id"] != record["signing_act_id"]:
+        return False
+    if entry["presentation_hash"] != record["presentation_hash"]:
+        return False
+    if entry["witnessed_signature_ref"] != record["witnessed_signature_ref"]:
         return False
     return True
 

@@ -554,7 +554,7 @@ def write_verify_vector() -> None:
     root_dir, members, data, manifest_payload = export_members_from_dir(OUT_EXPORT_006)
     catalog = cbor2.loads(data["062-signature-affirmations.cbor"])
     tampered_catalog = copy.deepcopy(catalog)
-    tampered_catalog[0]["signer_id"] = "delegate"
+    tampered_catalog[0]["signing_act_id"] = "signing-act-tampered"
     catalog_bytes = dcbor(tampered_catalog)
     data_verify = dict(data)
     data_verify["062-signature-affirmations.cbor"] = catalog_bytes
@@ -579,7 +579,7 @@ def write_verify_vector() -> None:
         '''id          = "verify/014-export-006-signature-row-mismatch"
 op          = "verify"
 status      = "active"
-description = """Negative verify vector for the WOS-T4 signature export catalog. Starts from `export/006-signature-affirmations-inline`, changes the catalog row signer id, and re-signs the export manifest so structure stays valid while the catalog no longer matches the chain-authored WOS record."""
+description = """Negative verify vector for the WOS-T4 signature export catalog. Starts from `export/006-signature-affirmations-inline`, changes the catalog row signing act id, and re-signs the export manifest so structure stays valid while the catalog no longer matches the chain-authored WOS record."""
 
 [coverage]
 tr_core = ["TR-CORE-067"]
@@ -592,6 +592,7 @@ export_zip = "input-export.zip"
 structure_verified   = true
 integrity_verified   = false
 readability_verified = true
+first_failure_kind   = "signature_catalog_mismatch"
 
 [derivation]
 document = "derivation.md"
@@ -602,10 +603,10 @@ document = "derivation.md"
         """# Derivation — `verify/014-export-006-signature-row-mismatch`
 
 This fixture starts from `export/006-signature-affirmations-inline`, mutates the
-`signer_id` in `062-signature-affirmations.cbor`, recomputes the catalog digest,
-and re-signs `000-manifest.cbor`. The ZIP remains structurally valid and all
-manifest digests match the archive contents, but the signature catalog no longer
-matches the chain-authored WOS `SignatureAffirmation` payload.
+`signing_act_id` in `062-signature-affirmations.cbor`, recomputes the catalog
+digest, and re-signs `000-manifest.cbor`. The ZIP remains structurally valid
+and all manifest digests match the archive contents, but the signature catalog
+no longer matches the chain-authored WOS `SignatureAffirmation` payload.
 """,
     )
 

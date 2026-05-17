@@ -91,6 +91,25 @@ def test_signed_acts_projection_mismatch_blocks_relying_party_verdict() -> None:
     assert report.integrity_verified is False
 
 
+def test_signature_catalog_signing_act_mismatch_fails_domain_validation() -> None:
+    export_zip = (
+        TRELLIS_ROOT
+        / "fixtures/vectors/verify/014-export-006-signature-row-mismatch/input-export.zip"
+    ).read_bytes()
+
+    report = verify_wos.verify_export_zip(export_zip)
+
+    assert report.substrate.structure_verified is True
+    assert report.substrate.integrity_verified is True
+    assert any(
+        finding.kind == "signature_catalog_mismatch"
+        for finding in report.wos_findings
+    )
+    assert report.verdict.cryptographic_integrity == "pass"
+    assert report.verdict.domain_admissibility == "fail"
+    assert report.verdict.relying_party_result == "invalid"
+
+
 def test_policy_closure_digest_mismatch_blocks_domain_verdict() -> None:
     export_zip = (
         TRELLIS_ROOT
