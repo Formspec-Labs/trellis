@@ -101,10 +101,10 @@ GENESIS_APPEND_HEAD_FILE = GENESIS_VECTOR_DIR / "expected-append-head.cbor"
 SURVIVOR_APPEND_HEAD_FILE = SURVIVOR_VECTOR_DIR / "expected-append-head.cbor"
 
 EXPECTED_GENESIS_EVENT_SHA256 = (
-    "3104ec644994ec735cd540bc5f8fcce0cdbdbd1316a2c09c7207742c075ef389"
+    "deca82133a10729c570e277ee38a975b7f6b9e79374052f80069b3863bdd733d"
 )
 EXPECTED_SURVIVOR_EVENT_SHA256 = (
-    "b2b3ce687fd8b618a69fd89b311d46de115725381a6044fcbb35206b0df77ffe"
+    "a22ff7aa140f5aacc429cab158688c34823af7e0ec5b88bcac7e63a0fcf27091"
 )
 
 # The two canonical event hashes pinned by the upstream append vectors. We

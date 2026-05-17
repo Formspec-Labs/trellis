@@ -62,7 +62,8 @@ ALG_EDDSA = -8                                          # COSE alg, §7.1
 COSE_LABEL_ALG = 1                                      # §7.4, per RFC 9052 §3.1
 COSE_LABEL_KID = 4                                      # §7.4, per RFC 9052 §3.1
 COSE_LABEL_SUITE_ID = -65537                            # §7.4, Trellis-reserved
-# COSE_LABEL_ARTIFACT_TYPE = -65538 is MAY per §7.4; omitted from this vector.
+COSE_LABEL_ARTIFACT_TYPE = -65538                       # §7.4 / ADR 0109, Trellis substrate role
+ARTIFACT_TYPE_EVENT = "event"                           # ADR 0109 closed substrate role
 
 # Domain-separation tags, §9.8 registry.
 TAG_TRELLIS_EVENT_V1 = "trellis-event-v1"               # §9.2
@@ -238,16 +239,13 @@ def build_canonical_event_hash_preimage(event_payload: dict) -> dict:
 # §7.4 Protected-header map and RFC 9052 §4.4 Sig_structure.
 # ---------------------------------------------------------------------------
 
-def build_protected_header(kid: bytes) -> dict:
-    # Three mandatory headers per §7.4. `artifact_type` (-65538) is MAY and
-    # omitted from this vector. dCBOR serialization (map-key canonical order)
-    # applied at encode time; for these integer keys (1, 4, -65537) the
-    # byte-wise encoding order is 0x01, 0x04, 0x3a00010000 so the serialized
-    # order is alg, kid, suite_id.
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
+    # Four mandatory substrate headers per §7.4 / ADR 0109. dCBOR
+    # serialization (map-key canonical order) is applied at encode time.
     return {
         COSE_LABEL_ALG:      ALG_EDDSA,
         COSE_LABEL_KID:      kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use stack_common_error::StackError;
 use trellis_server_ports::{
     AdmissionEvent, AdmittedEvent, BudgetReviewRecord, DirectSubmitPolicy, EventAdmissionPolicy,
-    EventFamilyId, EventTypeSpec, ProfileId, SchemaRef,
+    EventFamilyId, EventTypeSpec, SchemaRef,
 };
 use trellis_types::ArtifactType;
 
@@ -35,10 +35,9 @@ pub fn formspec_schema_ref(event_type: &str) -> String {
 /// Builds the event-type specifications a Trellis composition root may register
 /// against [`trellis_server_ports::EventTypeRegistry`] at startup.
 ///
-/// Each entry carries the full neutral metadata (`event_family`, `profile_id`,
+/// Each entry carries the full neutral metadata (`event_family`,
 /// `artifact_type`, `direct_submit`) so the registry remains the catalog's
-/// source of truth. `profile_id` retires per ADR 0109; `artifact_type` is the
-/// substrate structural-role contract.
+/// source of truth. `artifact_type` is the substrate structural-role contract.
 #[must_use]
 pub fn formspec_event_type_specs() -> Vec<EventTypeSpec> {
     vec![EventTypeSpec {
@@ -47,7 +46,6 @@ pub fn formspec_event_type_specs() -> Vec<EventTypeSpec> {
             .expect("formspec family slug is non-empty by construction"),
         schema_ref: SchemaRef::new(formspec_schema_ref(FORMSPEC_RESPONSE_SUBMITTED))
             .expect("formspec schema refs are URI-like by construction"),
-        profile_id: ProfileId::new(integrity_verify::FORMSPEC_PROFILE_ID),
         artifact_type: ArtifactType::Event,
         direct_submit: DirectSubmitPolicy::ServiceOnly,
         budget_review: BudgetReviewRecord {
@@ -70,9 +68,8 @@ impl FormspecAppendAdmissionPolicy {
     }
 
     fn admitted_event_for(event_type: &str) -> Result<AdmittedEvent, StackError> {
-        let family = EventFamilyId::new(FORMSPEC_EVENT_FAMILY).map_err(|error| {
-            StackError::internal(format!("formspec family invariant: {error}"))
-        })?;
+        let family = EventFamilyId::new(FORMSPEC_EVENT_FAMILY)
+            .map_err(|error| StackError::internal(format!("formspec family invariant: {error}")))?;
         let schema_ref = SchemaRef::new(formspec_schema_ref(event_type)).map_err(|error| {
             StackError::internal(format!("formspec schema ref invariant: {error}"))
         })?;
@@ -80,7 +77,6 @@ impl FormspecAppendAdmissionPolicy {
             event_type: event_type.to_string(),
             event_family: family,
             schema_ref,
-            profile_id: ProfileId::new(integrity_verify::FORMSPEC_PROFILE_ID),
             artifact_type: ArtifactType::Event,
             direct_submit: DirectSubmitPolicy::ServiceOnly,
         })
@@ -139,12 +135,14 @@ mod tests {
             .expect("well-formed payload admits");
         assert_eq!(admitted.event_type, FORMSPEC_RESPONSE_SUBMITTED);
         assert_eq!(admitted.event_family.as_str(), FORMSPEC_EVENT_FAMILY);
-        assert_eq!(
-            admitted.profile_id.get(),
-            integrity_verify::FORMSPEC_PROFILE_ID
-        );
+        assert_eq!(admitted.artifact_type, ArtifactType::Event);
         assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
-        assert!(admitted.schema_ref.as_str().starts_with("formspec-events://"));
+        assert!(
+            admitted
+                .schema_ref
+                .as_str()
+                .starts_with("formspec-events://")
+        );
     }
 
     #[tokio::test]

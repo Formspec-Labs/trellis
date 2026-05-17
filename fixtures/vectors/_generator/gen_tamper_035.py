@@ -37,6 +37,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     domain_separated_sha256,
@@ -143,11 +147,11 @@ def build_event_payload_map(authored_map: dict, author_event_hash: bytes) -> dic
     return payload
 
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG: ALG_EDDSA,
         COSE_LABEL_KID: kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

@@ -123,6 +123,10 @@ ALG_EDDSA = -8                                          # COSE alg, §7.1
 COSE_LABEL_ALG = 1                                      # §7.4, per RFC 9052 §3.1
 COSE_LABEL_KID = 4                                      # §7.4, per RFC 9052 §3.1
 COSE_LABEL_SUITE_ID = -65537                            # §7.4, Trellis-reserved
+COSE_LABEL_ARTIFACT_TYPE = -65538
+ARTIFACT_TYPE_EVENT = "event"
+ARTIFACT_TYPE_CHECKPOINT = "checkpoint"
+ARTIFACT_TYPE_MANIFEST = "manifest"
 
 # Domain-separation tags, §9.8 registry.
 TAG_TRELLIS_EVENT_V1 = "trellis-event-v1"               # §9.2
@@ -288,11 +292,11 @@ def build_canonical_event_hash_preimage(event_payload: dict) -> dict:
 # 001 / 005.
 # ---------------------------------------------------------------------------
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG:      ALG_EDDSA,
         COSE_LABEL_KID:      kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

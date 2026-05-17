@@ -17,10 +17,12 @@
 use async_trait::async_trait;
 use stack_common_error::StackError;
 use stack_common_http::tenant::TenantScope;
-pub use wos_events::WOS_CANONICAL_EVENT_LITERALS;
 use wos_events::ProvenanceRecord;
+pub use wos_events::WOS_CANONICAL_EVENT_LITERALS;
 
-use crate::{AppendActor, ComputeContext, SubstrateAppendRequest, SubstrateAppendResult, SubstrateClient};
+use crate::{
+    AppendActor, ComputeContext, SubstrateAppendRequest, SubstrateAppendResult, SubstrateClient,
+};
 
 /// Builds a typed WOS provenance append request from a [`ProvenanceRecord`].
 ///
@@ -51,7 +53,9 @@ pub fn wos_provenance_append_request(
             StackError::bad_request("WOS provenance record kind has no Trellis event literal")
         })?;
     let payload = serde_json::to_value(&record).map_err(|error| {
-        StackError::bad_request(format!("failed to serialize WOS provenance payload: {error}"))
+        StackError::bad_request(format!(
+            "failed to serialize WOS provenance payload: {error}"
+        ))
     })?;
     SubstrateAppendRequest::new_json(
         scope,

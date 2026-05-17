@@ -64,6 +64,10 @@ ALG_EDDSA = -8
 COSE_LABEL_ALG = 1
 COSE_LABEL_KID = 4
 COSE_LABEL_SUITE_ID = -65537
+COSE_LABEL_ARTIFACT_TYPE = -65538
+ARTIFACT_TYPE_EVENT = "event"
+ARTIFACT_TYPE_CHECKPOINT = "checkpoint"
+ARTIFACT_TYPE_MANIFEST = "manifest"
 
 TAG_TRELLIS_EVENT_V1 = "trellis-event-v1"
 TAG_TRELLIS_AUTHOR_EVENT_V1 = "trellis-author-event-v1"
@@ -280,7 +284,7 @@ def main() -> None:
     event_payload_bytes = dcbor(event_payload)
 
     protected_map_bytes = dcbor({
-        COSE_LABEL_ALG: ALG_EDDSA, COSE_LABEL_KID: kid, COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_ALG: ALG_EDDSA, COSE_LABEL_KID: kid, COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: ARTIFACT_TYPE_EVENT,
     })
     sig_structure = dcbor(["Signature1", protected_map_bytes, b"", event_payload_bytes])
     signature = Ed25519PrivateKey.from_private_bytes(issuer_seed).sign(sig_structure)

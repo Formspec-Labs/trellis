@@ -1,7 +1,7 @@
-id = "tamper/029-uca-chain-position-mismatch"
-op = "tamper"
-status = "active"
-description = "ADR 0010 §\"Verifier obligations\" step 3 violation: `attested_event_position = 0` resolves to a chain-present event whose `canonical_event_hash` does not equal the attestation's `attested_event_hash` field. The verifier flips `chain_position_resolved = false` and emits `user_content_attestation_chain_position_mismatch`. Adversary intent: sign a hash without committing to its sequence (ADR 0010 §\"Adversary model\" wrong-position case)."
+id          = "tamper/029-uca-chain-position-mismatch"
+op          = "tamper"
+status      = "active"
+description = """ADR 0010 §"Verifier obligations" step 3 violation: `attested_event_position = 0` resolves to a chain-present event whose `canonical_event_hash` does not equal the attestation's `attested_event_hash` field. The verifier flips `chain_position_resolved = false` and emits `user_content_attestation_chain_position_mismatch`. Adversary intent: sign a hash without committing to its sequence (ADR 0010 §"Adversary model" wrong-position case)."""
 
 [coverage]
 tr_core = [
@@ -13,16 +13,16 @@ tr_core = [
 ]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "user_content_attestation_chain_position_mismatch"
-failing_event_id = "ed46881143b8b72c912766ed0e0d896462c31063165968b74a5ebf92effc2897"
+tamper_kind          = "user_content_attestation_chain_position_mismatch"
+failing_event_id     = "ed46881143b8b72c912766ed0e0d896462c31063165968b74a5ebf92effc2897"
 
 [derivation]
 document = "derivation.md"

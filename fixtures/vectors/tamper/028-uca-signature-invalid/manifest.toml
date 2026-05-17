@@ -1,7 +1,7 @@
-id = "tamper/028-uca-signature-invalid"
-op = "tamper"
-status = "active"
-description = "ADR 0010 §\"Verifier obligations\" step 5 violation: `UserContentAttestationPayload.signature` computed under `trellis-transition-attestation-v1` (the operator-actor posture-transition tag) instead of `trellis-user-content-attestation-v1`. The cross-family domain-separation rule rejects the signature; verifier emits `user_content_attestation_signature_invalid`. 3-event chain: [host(seq 0), identity(seq 1), uca(seq 2)]; steps 3 / 4 / 6 pass, step 5 fails."
+id          = "tamper/028-uca-signature-invalid"
+op          = "tamper"
+status      = "active"
+description = """ADR 0010 §"Verifier obligations" step 5 violation: `UserContentAttestationPayload.signature` computed under `trellis-transition-attestation-v1` (the operator-actor posture-transition tag) instead of `trellis-user-content-attestation-v1`. The cross-family domain-separation rule rejects the signature; verifier emits `user_content_attestation_signature_invalid`. 3-event chain: [host(seq 0), identity(seq 1), uca(seq 2)]; steps 3 / 4 / 6 pass, step 5 fails."""
 
 [coverage]
 tr_core = [
@@ -13,16 +13,16 @@ tr_core = [
 ]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "user_content_attestation_signature_invalid"
-failing_event_id = "32f293be28b3145c06ab5687b3bc9d9af596be3af24fd622b07aeff4c0796ccd"
+tamper_kind          = "user_content_attestation_signature_invalid"
+failing_event_id     = "32f293be28b3145c06ab5687b3bc9d9af596be3af24fd622b07aeff4c0796ccd"
 
 [derivation]
 document = "derivation.md"

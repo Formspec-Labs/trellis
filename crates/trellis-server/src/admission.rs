@@ -72,15 +72,14 @@ mod tests {
     async fn given_scope_in_jwt_scopes_when_scoped_authorizer_runs_then_ok() {
         let auth = ScopedAllowlistScopeAuthorizer;
         let scopes = vec!["case_123".to_string()];
-        auth
-            .authorize(&ScopeAuthorization {
-                actor: "sub",
-                scope: b"case_123",
-                action: ScopeAction::Append,
-                jwt_scopes: Some(scopes.as_slice()),
-            })
-            .await
-            .expect("scope allowlisted");
+        auth.authorize(&ScopeAuthorization {
+            actor: "sub",
+            scope: b"case_123",
+            action: ScopeAction::Append,
+            jwt_scopes: Some(scopes.as_slice()),
+        })
+        .await
+        .expect("scope allowlisted");
     }
 
     /// Given JWT scopes omitting the request scope, when scoped authorizer runs, then it returns forbidden.

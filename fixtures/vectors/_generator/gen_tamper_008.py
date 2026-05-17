@@ -81,7 +81,7 @@ BASELINE_APPEND_HEAD_FILE = BASELINE_VECTOR_DIR / "expected-append-head.cbor"
 # Drift-alarm SHA-256 — if append/001's envelope drifts, regenerate that
 # vector first and update here.
 EXPECTED_BASELINE_EVENT_SHA256 = (
-    "3104ec644994ec735cd540bc5f8fcce0cdbdbd1316a2c09c7207742c075ef389"
+    "deca82133a10729c570e277ee38a975b7f6b9e79374052f80069b3863bdd733d"
 )
 BASELINE_CANONICAL_EVENT_HASH_HEX = (
     "bb2cdb1e0aa3bcae1d50cb72d68b26af45b92e088f820e901c3d6d1558694396"
@@ -194,7 +194,7 @@ def main() -> None:
         f"tampered tag number must be COSE_Mac0 ({CBOR_TAG_COSE_MAC0}), "
         f"got {decoded.tag}"
     )
-    assert isinstance(decoded.value, list) and len(decoded.value) == 4, (
+    assert isinstance(decoded.value, (list, tuple)) and len(decoded.value) == 4, (
         "even with the wrong tag, the contents remain a 4-element array "
         "(that's precisely what makes the tamper subtle — lenient "
         "verifiers might proceed)"

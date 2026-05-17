@@ -43,7 +43,6 @@ mod state;
 #[doc(inline)]
 pub use composition::{AdmissionRouter, default_admission_policy};
 
-
 use artifacts::BundleRecord;
 
 #[doc(inline)]
@@ -77,12 +76,8 @@ use trellis_export_writer::{
     ExportWriterInput, RegistrySnapshot as ExportRegistrySnapshot,
     SigningKeyMaterial as ExportSigningKey, TrellisTimestamp, write_export,
 };
-use trellis_server_ports::ProfileId;
-use trellis_service_client::{
-    ComputeContext, SubstrateAppendResult,
-    VerificationReceipt,
-};
-use trellis_types::{EVENT_DOMAIN, StoredEvent};
+use trellis_service_client::{ComputeContext, SubstrateAppendResult, VerificationReceipt};
+use trellis_types::{ArtifactType, EVENT_DOMAIN, StoredEvent};
 
 use crate::openapi::EventTypeRegistryView;
 
@@ -253,7 +248,7 @@ pub(crate) async fn publish_bundle(
 pub(crate) fn append_result_for_event(
     scope: &str,
     event: &StoredEvent,
-    profile_id: ProfileId,
+    artifact_type: ArtifactType,
     event_type: &str,
     bundle: &BundleRecord,
     export_verified: bool,
@@ -268,7 +263,7 @@ pub(crate) fn append_result_for_event(
         bundle_ref: bundle.artifact_ref.uri.clone(),
         verification_receipt: VerificationReceipt {
             verified: export_verified,
-            profile_id: profile_id.get(),
+            artifact_type,
             event_type: event_type.to_string(),
         },
     })
@@ -366,7 +361,6 @@ fn value_to_u64(value: &Value, label: &str) -> Result<u64, StackError> {
         .map_err(|_| StackError::bad_request(format!("{label} is negative or too large")))
 }
 
-
 pub(crate) fn now_timestamp() -> Result<TrellisTimestamp, StackError> {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -425,7 +419,9 @@ fn event_type_registry_cbor(
     encode_value(&registry)
 }
 
-pub(crate) fn signing_key_registry_cbor(signing_key: &ExportSigningKey) -> Result<Vec<u8>, StackError> {
+pub(crate) fn signing_key_registry_cbor(
+    signing_key: &ExportSigningKey,
+) -> Result<Vec<u8>, StackError> {
     let entry = text_map(vec![
         ("kid", Value::Bytes(signing_key.kid().to_vec())),
         ("pubkey", Value::Bytes(signing_key.public_key.to_vec())),
@@ -522,8 +518,8 @@ mod tests {
     use trellis_service_client::{ClientAttestation, SubstrateAppendBody};
     use wos_events::{ProvenanceKind, ProvenanceRecord, WOS_CANONICAL_EVENT_LITERALS};
 
-    use crate::append::{AppendRunner, DefaultAppendRunner};
     use crate::admission::ScopedAllowlistScopeAuthorizer;
+    use crate::append::{AppendRunner, DefaultAppendRunner};
     use crate::state::TrellisHealthProbe;
 
     use std::fs;
@@ -658,9 +654,9 @@ mod tests {
     }
 
     /// Given a WOS provenance append, when the handler completes, then the receipt
-    /// carries WOS profile id 1 (not the global Formspec profile 2).
+    /// carries the substrate event artifact type.
     #[tokio::test]
-    async fn given_wos_append_when_completed_then_receipt_profile_id_is_wos() {
+    async fn given_wos_append_when_completed_then_receipt_artifact_type_is_event() {
         let app = router(test_state()).expect("router");
         let response = app
             .oneshot(post_request(
@@ -673,16 +669,16 @@ mod tests {
         let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let result: SubstrateAppendResult = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
-            result.verification_receipt.profile_id,
-            integrity_verify::WOS_PROFILE_ID,
-            "WOS append receipts must use profile 1"
+            result.verification_receipt.artifact_type,
+            ArtifactType::Event,
+            "WOS append receipts must project artifactType=event"
         );
     }
 
     /// Given a Formspec aggregate append, when admission runs, then the event is
-    /// accepted and the receipt carries Formspec profile id 2.
+    /// accepted and the receipt carries the substrate event artifact type.
     #[tokio::test]
-    async fn given_formspec_response_submitted_when_appended_then_profile_id_is_formspec() {
+    async fn given_formspec_response_submitted_when_appended_then_artifact_type_is_event() {
         let app = router(test_state()).expect("router");
         let response = app
             .oneshot(formspec_post_request(
@@ -699,9 +695,9 @@ mod tests {
             FORMSPEC_RESPONSE_SUBMITTED
         );
         assert_eq!(
-            result.verification_receipt.profile_id,
-            integrity_verify::FORMSPEC_PROFILE_ID,
-            "Formspec append receipts must use profile 2"
+            result.verification_receipt.artifact_type,
+            ArtifactType::Event,
+            "Formspec append receipts must project artifactType=event"
         );
     }
 

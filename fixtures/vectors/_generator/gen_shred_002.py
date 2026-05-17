@@ -89,6 +89,10 @@ ALG_EDDSA = -8
 COSE_LABEL_ALG = 1
 COSE_LABEL_KID = 4
 COSE_LABEL_SUITE_ID = -65537
+COSE_LABEL_ARTIFACT_TYPE = -65538
+ARTIFACT_TYPE_EVENT = "event"
+ARTIFACT_TYPE_CHECKPOINT = "checkpoint"
+ARTIFACT_TYPE_MANIFEST = "manifest"
 PAYLOAD_NONCE = b"\x00" * 12
 
 # Domain-separation tags (§9.8).
@@ -223,11 +227,11 @@ def build_canonical_preimage(event_payload: dict) -> dict:
     }
 
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG:      ALG_EDDSA,
         COSE_LABEL_KID:      kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

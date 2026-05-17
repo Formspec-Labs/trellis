@@ -7,6 +7,6 @@ stays `2`. Per ADR 0007 §"Verifier obligations" step 2 first invariant
 returns `Err(VerifyError::with_kind(..., "certificate_chain_summary_mismatch"))`,
 which `_verify_event_set` surfaces as a fatal `tamper_kind`.
 
-Failing canonical_event_hash: `e398a319fcb1cc777de0ba71718b9d5030c729ba5762fbcf320d901463d135e8`.
+Failing canonical_event_hash: `816935981bd8a093b066fd4eb7efffa62b8f0d8539622510516268c47f5104e0`.
 
 Generator: `_generator/gen_tamper_021_023_025_026.py`.

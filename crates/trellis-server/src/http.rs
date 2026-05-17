@@ -18,9 +18,7 @@ use trellis_service_client::{ComputeSensitivity, SubstrateAppendBody, SubstrateA
 use crate::append;
 use crate::openapi::EventTypeRegistryView;
 use crate::state::{TrellisHealthProbe, TrellisServerState};
-use crate::{
-    event_type_registry_view, publish_bundle, signing_key_registry_cbor,
-};
+use crate::{event_type_registry_view, publish_bundle, signing_key_registry_cbor};
 
 /// Builds the Trellis Axum router.
 ///
@@ -243,7 +241,9 @@ pub(crate) async fn event_type_registry(
     headers: HeaderMap,
 ) -> Result<Json<EventTypeRegistryView>, StackError> {
     read_authorized(&state, &scope, &tenant_scope, &headers).await?;
-    Ok(Json(event_type_registry_view(state.event_type_catalog.as_ref())))
+    Ok(Json(event_type_registry_view(
+        state.event_type_catalog.as_ref(),
+    )))
 }
 
 async fn read_authorized(

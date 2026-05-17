@@ -160,7 +160,7 @@ impl<'a> AppendCoordinator<'a> {
             let result = append_result_for_event(
                 &command.scope,
                 existing,
-                admitted.profile_id,
+                admitted.artifact_type,
                 &admitted.event_type,
                 &bundle,
                 true,
@@ -218,7 +218,7 @@ impl<'a> AppendCoordinator<'a> {
         let result = append_result_for_event(
             scope,
             &stored,
-            admitted.profile_id,
+            admitted.artifact_type,
             &admitted.event_type,
             &bundle,
             true,

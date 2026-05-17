@@ -64,9 +64,10 @@ use serde::{Deserialize, Serialize};
 use stack_common_error::StackError;
 use stack_common_http::idempotency::IDEMPOTENCY_KEY_HEADER;
 use stack_common_http::tenant::{HeaderConfig, TenantScope};
-use utoipa::openapi::{RefOr, Schema};
-use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+use trellis_types::ArtifactType;
 use utoipa::ToSchema;
+use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+use utoipa::openapi::{RefOr, Schema};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -90,6 +91,17 @@ fn trellis_admitted_event_type_openapi_schema() -> RefOr<Schema> {
         .enum_values(Some(values))
         .description(Some(
             "Admitted Trellis append literals: `wos-events` substrate registry plus Formspec append.",
+        ))
+        .into()
+}
+
+#[must_use]
+fn artifact_type_openapi_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(SchemaType::new(Type::String))
+        .enum_values(Some(["event", "checkpoint", "manifest"]))
+        .description(Some(
+            "Trellis substrate artifact type: event, checkpoint, or manifest.",
         ))
         .into()
 }
@@ -329,7 +341,8 @@ impl SubstrateAppendBody {
 #[serde(rename_all = "camelCase")]
 pub struct VerificationReceipt {
     pub verified: bool,
-    pub profile_id: u64,
+    #[schema(schema_with = artifact_type_openapi_schema)]
+    pub artifact_type: ArtifactType,
     pub event_type: String,
 }
 
@@ -755,7 +768,7 @@ mod tests {
             assert_eq!(value["computeContext"]["sensitivity"], "publicMetadata");
             response(
                 "application/json",
-                r#"{"eventId":"evt_1","sequence":7,"canonicalEventHash":"sha256:abc","checkpointRef":"trellis://case_123/checkpoints/cp_1","bundleRef":"s3://bucket/bundle.zip","verificationReceipt":{"verified":true,"profileId":1,"eventType":"wos.kernel.case_created"}}"#,
+                r#"{"eventId":"evt_1","sequence":7,"canonicalEventHash":"sha256:abc","checkpointRef":"trellis://case_123/checkpoints/cp_1","bundleRef":"s3://bucket/bundle.zip","verificationReceipt":{"verified":true,"artifactType":"event","eventType":"wos.kernel.case_created"}}"#,
             )
         });
         let client = TrellisServiceClient::new(TrellisServiceClientConfig::new(
@@ -815,7 +828,7 @@ mod tests {
             bundle_ref: "s3://bucket/bundle.zip".to_string(),
             verification_receipt: VerificationReceipt {
                 verified: false,
-                profile_id: 1,
+                artifact_type: ArtifactType::Event,
                 event_type: "wos.kernel.case_created".to_string(),
             },
         };

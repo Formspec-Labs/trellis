@@ -1,7 +1,7 @@
-id = "tamper/031-uca-identity-subject-mismatch"
-op = "tamper"
-status = "active"
-description = "ADR 0010 §\"Verifier obligations\" step 4 violation: resolved identity-attestation event's payload subject (`urn:trellis:principal:somebody-else-031`) does not equal the attestation's `attestor` (`urn:trellis:principal:applicant-031`). Verifier flips `identity_resolved = false` and emits `user_content_attestation_identity_subject_mismatch`."
+id          = "tamper/031-uca-identity-subject-mismatch"
+op          = "tamper"
+status      = "active"
+description = """ADR 0010 §"Verifier obligations" step 4 violation: resolved identity-attestation event's payload subject (`urn:trellis:principal:somebody-else-031`) does not equal the attestation's `attestor` (`urn:trellis:principal:applicant-031`). Verifier flips `identity_resolved = false` and emits `user_content_attestation_identity_subject_mismatch`."""
 
 [coverage]
 tr_core = [
@@ -13,16 +13,16 @@ tr_core = [
 ]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "user_content_attestation_identity_subject_mismatch"
-failing_event_id = "352dccadcc522191505c91e77f83baa99bb13109d52a1894364beeb003832eea"
+tamper_kind          = "user_content_attestation_identity_subject_mismatch"
+failing_event_id     = "352dccadcc522191505c91e77f83baa99bb13109d52a1894364beeb003832eea"
 
 [derivation]
 document = "derivation.md"

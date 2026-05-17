@@ -38,11 +38,11 @@ ADR 0007 §"Wire shape" positive vector for `trellis.certificate-of-completion.v
    `_keys/issuer-001.cose_key` (Ed25519, suite-id 1).
 
 5. **Hashes.** Author/canonical hashes follow Core §9.5 / §9.1 framing.
-   Final `canonical_event_hash` = `fea731f82760b526a88d138cce2ab325e9f36aaec0de3adc8fa8ffad4d0150ca`.
+   Final `canonical_event_hash` = `949161c572b9fa471447d49bb0829295328a210bb7b35f7fbaa324f701af0c13`.
 
 ## Phase-1 verifier posture
 
-Per `finalize_certificates_of_completion` in `crates/trellis-verify/src/lib.rs`:
+Per `finalize_certificates_of_completion` in `integrity-verify::trellis`:
 genesis-append context skips step 5 / 6 / 7 cross-event resolution because
 the in-scope `events` slice does not carry the referenced
 SignatureAffirmation. Step 4 (attachment lineage + content-hash recompute)

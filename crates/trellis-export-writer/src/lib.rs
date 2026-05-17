@@ -17,11 +17,11 @@ use integrity_cbor::{
     map_lookup_bytes, map_lookup_u64, sha256_bytes,
 };
 use integrity_cose::{
-    derive_kid, protected_header_bytes, sig_structure_bytes, sign_ed25519, sign1_bytes,
+    derive_kid, sig_structure_bytes, sign_ed25519, sign1_bytes, substrate_protected_header,
 };
 pub use integrity_hpke::{HPKE_SUITE1_AAD, HPKE_SUITE1_INFO};
 use stack_common_error::StackError;
-use trellis_types::StoredEvent;
+use trellis_types::{ArtifactType, StoredEvent};
 #[doc(inline)]
 pub use trellis_witness_registry::WitnessKeyRegistry;
 
@@ -332,7 +332,11 @@ pub fn write_export(input: ExportWriterInput) -> Result<ExportPackage, StackErro
         consistency_proofs_cbor: &consistency_proofs_cbor,
         manifest_extensions,
     })?;
-    let signed_manifest = sign_cose(&input.signing_key, &manifest_payload);
+    let signed_manifest = sign_cose(
+        &input.signing_key,
+        ArtifactType::Manifest,
+        &manifest_payload,
+    );
     let manifest_digest = export_manifest_digest(&input.scope, &manifest_payload);
 
     let mut bundle = Bundle::new();
@@ -692,7 +696,7 @@ fn checkpoint_chain(
         )?;
         let payload_bytes = encode_value(&payload)?;
         let digest = checkpoint_digest(&input.scope, &payload_bytes);
-        let sign1 = sign_cose(&input.signing_key, &payload_bytes);
+        let sign1 = sign_cose(&input.signing_key, ArtifactType::Checkpoint, &payload_bytes);
         prior_digest = Some(digest);
         checkpoints.push(SignedCheckpoint { digest, sign1 });
     }
@@ -945,8 +949,20 @@ fn root_dir(scope: &[u8], tree_size: usize, tree_head_hash: [u8; 32]) -> String 
     format!("trellis-export-{scope}-{tree_size}-{}", &head_hex[..8])
 }
 
-fn sign_cose(signing_key: &SigningKeyMaterial, payload: &[u8]) -> Vec<u8> {
-    let protected_header = protected_header_bytes(signing_key.kid());
+/// COSE EdDSA algorithm identifier used by Trellis Phase 1.
+const ALG_EDDSA: i32 = -8;
+
+fn sign_cose(
+    signing_key: &SigningKeyMaterial,
+    artifact_type: ArtifactType,
+    payload: &[u8],
+) -> Vec<u8> {
+    let protected_header = substrate_protected_header(
+        ALG_EDDSA,
+        &signing_key.kid(),
+        SUITE_ID_PHASE_1,
+        artifact_type.cose_value(),
+    );
     let sig_structure = sig_structure_bytes(&protected_header, payload);
     let signature = sign_ed25519(signing_key.private_seed, &sig_structure);
     sign1_bytes(&protected_header, payload, signature)
@@ -1243,7 +1259,7 @@ mod tests {
         assert!(verification.trellis.integrity_verified, "{verification:#?}");
         assert_eq!(
             hex_lower(&sha256_bytes(&package.zip_bytes)),
-            "8c79630db6accc5fd01be3a37f01a4c01c367e0bdfaa5af79cc24ac7d6c87279"
+            "e0d6ef2bdc0756a5284e3cb66beb3d79c582b1f5e0231debbe44e41a162ba1fa"
         );
     }
 
@@ -1356,7 +1372,9 @@ mod tests {
         input.witness_key_registry = None;
         let error = write_export(input).expect_err("extension without registry must reject");
         assert!(
-            error.to_string().contains("witness_key_registry was not provided"),
+            error
+                .to_string()
+                .contains("witness_key_registry was not provided"),
             "{error}"
         );
     }
@@ -1377,7 +1395,9 @@ mod tests {
         input.witness_key_registry = Some(WitnessKeyRegistry::new(vec![bad_entry]));
         let error = write_export(input).expect_err("invalid witness material must reject");
         assert!(
-            error.to_string().contains("witness_key_registry is invalid"),
+            error
+                .to_string()
+                .contains("witness_key_registry is invalid"),
             "{error}"
         );
     }

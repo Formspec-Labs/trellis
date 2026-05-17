@@ -26,6 +26,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     domain_separated_sha256,
@@ -34,9 +38,16 @@ from _lib.byte_utils import (  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FORMSPEC_ROOT = ROOT.parents[2]
 KEY_FILE = ROOT / "_keys" / "issuer-001.cose_key"
-FORMSPEC_FIXTURE = FORMSPEC_ROOT / "fixtures" / "respondent-ledger" / "attachment-added-binding.json"
+FORMSPEC_FIXTURE_CANDIDATES = [
+    ROOT.parents[2] / "fixtures" / "respondent-ledger" / "attachment-added-binding.json",
+    ROOT.parents[2] / "formspec" / "fixtures" / "respondent-ledger" / "attachment-added-binding.json",
+    ROOT.parents[3] / "formspec" / "fixtures" / "respondent-ledger" / "attachment-added-binding.json",
+]
+FORMSPEC_FIXTURE = next(
+    (candidate for candidate in FORMSPEC_FIXTURE_CANDIDATES if candidate.is_file()),
+    FORMSPEC_FIXTURE_CANDIDATES[0],
+)
 OUT_DIR = ROOT / "append" / "018-attachment-bound"
 
 ATTACHMENT_CIPHERTEXT = (
@@ -84,7 +95,7 @@ def load_formspec_fixture() -> dict:
     if not FORMSPEC_FIXTURE.is_file():
         raise FileNotFoundError(
             f"Missing Formspec fixture {FORMSPEC_FIXTURE}. "
-            "Expected monorepo layout: trellis/fixtures/vectors/_generator/ → …/formspec/fixtures/respondent-ledger/…"
+            "Checked formspec-stack root, nested formspec/, and sibling formspec/ layouts."
         )
     return json.loads(FORMSPEC_FIXTURE.read_text())
 
@@ -192,11 +203,11 @@ def build_canonical_event_hash_preimage(event_payload: dict) -> dict:
     }
 
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG: ALG_EDDSA,
         COSE_LABEL_KID: kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

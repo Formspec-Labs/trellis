@@ -33,6 +33,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     deterministic_zipinfo,
@@ -222,12 +226,12 @@ def inclusion_proofs(leaf_hashes: list[bytes]) -> dict[int, dict]:
     raise AssertionError("this generator only emits one- or three-event exports")
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     protected = dcbor(
         {
             COSE_LABEL_ALG: ALG_EDDSA,
             COSE_LABEL_KID: kid,
-            COSE_LABEL_SUITE_ID: SUITE_ID,
+            COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
         }
     )
     sig_structure = dcbor(["Signature1", protected, b"", payload_bytes])
@@ -486,7 +490,7 @@ def build_signed_event(
         {
             COSE_LABEL_ALG: ALG_EDDSA,
             COSE_LABEL_KID: kid,
-            COSE_LABEL_SUITE_ID: SUITE_ID,
+            COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: ARTIFACT_TYPE_EVENT,
         }
     )
     sig_structure = dcbor(["Signature1", protected, b"", event_payload_bytes])
@@ -666,7 +670,7 @@ def build_export(
         "prev_checkpoint_hash": None,
         "extensions": None,
     }
-    checkpoint_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload))
+    checkpoint_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload), ARTIFACT_TYPE_CHECKPOINT)
     checkpoints_cbor = dcbor([cbor2.loads(checkpoint_bytes)])
     head_digest = checkpoint_digest(CHAIN_SCOPE, checkpoint_payload)
 
@@ -737,7 +741,7 @@ def build_export(
         tree_size=len(events),
         open_clocks_bytes=open_clocks_bytes,
     )
-    manifest_bytes = cose_sign1(seed, kid, dcbor(manifest_payload))
+    manifest_bytes = cose_sign1(seed, kid, dcbor(manifest_payload), ARTIFACT_TYPE_MANIFEST)
     members["000-manifest.cbor"] = manifest_bytes
 
     for name, data in members.items():

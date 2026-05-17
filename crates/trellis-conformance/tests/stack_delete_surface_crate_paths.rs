@@ -51,8 +51,7 @@ Run tests from the monorepo parent or export SKIP_STACK_DELETE_SURFACE_GUARD=1 f
         hits.is_empty(),
         "retired crate dirs must not exist on disk — remove residue or refresh denylist intentionally.\n\
          hits:\n{}",
-        hits
-            .iter()
+        hits.iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join("\n")
@@ -103,8 +102,7 @@ fn scan_claude_worktree_crates(workspace: &Path, retired: &[&str]) -> Vec<PathBu
     if !worktrees.is_dir() {
         return hits;
     }
-    let snapshots = fs::read_dir(&worktrees)
-        .expect("read Claude worktrees");
+    let snapshots = fs::read_dir(&worktrees).expect("read Claude worktrees");
     for snapshot in snapshots.filter_map(Result::ok) {
         let crates_dir = snapshot.path().join("crates");
         if crates_dir.is_dir() {

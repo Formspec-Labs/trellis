@@ -1,7 +1,7 @@
-id = "tamper/030-uca-identity-unresolved"
-op = "tamper"
-status = "active"
-description = "ADR 0010 §\"Verifier obligations\" step 4 violation: `identity_attestation_ref` digest does not resolve to any chain-present event. No identity-attestation event present in the chain. Verifier flips `identity_resolved = false` and emits `user_content_attestation_identity_unresolved` with location pointing at the unresolvable digest. Adversary intent: claim identity proof without the proof actually being on-chain (ADR 0010 §\"Adversary model\" detached identity claim case)."
+id          = "tamper/030-uca-identity-unresolved"
+op          = "tamper"
+status      = "active"
+description = """ADR 0010 §"Verifier obligations" step 4 violation: `identity_attestation_ref` digest does not resolve to any chain-present event. No identity-attestation event present in the chain. Verifier flips `identity_resolved = false` and emits `user_content_attestation_identity_unresolved` with location pointing at the unresolvable digest. Adversary intent: claim identity proof without the proof actually being on-chain (ADR 0010 §"Adversary model" detached identity claim case)."""
 
 [coverage]
 tr_core = [
@@ -13,16 +13,16 @@ tr_core = [
 ]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "user_content_attestation_identity_unresolved"
-failing_event_id = "bc8e2f7571ff79b284b0fd881a97567ad7027f085a6c9593f7875c03d0824977"
+tamper_kind          = "user_content_attestation_identity_unresolved"
+failing_event_id     = "bc8e2f7571ff79b284b0fd881a97567ad7027f085a6c9593f7875c03d0824977"
 
 [derivation]
 document = "derivation.md"

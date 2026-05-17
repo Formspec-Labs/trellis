@@ -57,10 +57,10 @@ CHAIN_DIR = ROOT / "append" / "005-prior-head-chain"
 OUT_DIR = ROOT / "tamper" / "041-timestamp-backwards"
 
 EXPECTED_GENESIS_EVENT_SHA256 = (
-    "3104ec644994ec735cd540bc5f8fcce0cdbdbd1316a2c09c7207742c075ef389"
+    "deca82133a10729c570e277ee38a975b7f6b9e79374052f80069b3863bdd733d"
 )
 EXPECTED_CHAIN_EVENT_SHA256 = (
-    "b2b3ce687fd8b618a69fd89b311d46de115725381a6044fcbb35206b0df77ffe"
+    "a22ff7aa140f5aacc429cab158688c34823af7e0ec5b88bcac7e63a0fcf27091"
 )
 EXPECTED_GENESIS_CANONICAL_HASH_HEX = (
     "bb2cdb1e0aa3bcae1d50cb72d68b26af45b92e088f820e901c3d6d1558694396"
@@ -73,6 +73,10 @@ ALG_EDDSA = -8
 COSE_LABEL_ALG = 1
 COSE_LABEL_KID = 4
 COSE_LABEL_SUITE_ID = -65537
+COSE_LABEL_ARTIFACT_TYPE = -65538
+ARTIFACT_TYPE_EVENT = "event"
+ARTIFACT_TYPE_CHECKPOINT = "checkpoint"
+ARTIFACT_TYPE_MANIFEST = "manifest"
 
 ISSUER_VALID_FROM = ts(1745000000)
 SIGNING_KEY_ACTIVE_STATUS = 0
@@ -110,11 +114,11 @@ def load_issuer_key() -> tuple[bytes, bytes]:
     return seed, pubkey
 
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG: ALG_EDDSA,
         COSE_LABEL_KID: kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

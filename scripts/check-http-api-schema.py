@@ -262,26 +262,25 @@ def check_defs(schema: dict, server_source: str, client_source: str, errors: lis
             f"expected {registry_version}, got {schema_registry_version}"
         )
 
-    # DI-000/DI-003: profile_id_for_admitted_event prefix dispatch is deleted;
-    # the verification profile is sourced from `AdmittedEvent.profile_id` on
-    # the admission contract. Assert the new contract instead.
-    if "profile_id: ProfileId" not in server_source and "AdmittedEvent" not in server_source:
+    # ADR 0109: admission returns substrate artifact type, not an integer
+    # dispatch field. Assert the new contract instead.
+    if "artifact_type: ArtifactType" not in server_source and "AdmittedEvent" not in server_source:
         errors.append(
-            "trellis-server must consume AdmittedEvent.profile_id (DI-000); "
-            "previous profile_id_for_admitted_event dispatch was retired"
+            "trellis-server must consume AdmittedEvent.artifact_type (ADR 0109); "
+            "previous integer dispatch was retired"
         )
-    schema_profile_id = (
+    schema_artifact_type = (
         defs["VerificationReceipt"]
         .get("properties", {})
-        .get("profileId", {})
+        .get("artifactType", {})
     )
-    if schema_profile_id.get("const") is not None:
+    if schema_artifact_type.get("const") is not None:
         errors.append(
-            "VerificationReceipt.profileId must not const-lock a single global profile"
+            "VerificationReceipt.artifactType must not const-lock a single value"
         )
-    if schema_profile_id.get("enum") != [1, 2]:
+    if schema_artifact_type.get("enum") != ["event", "checkpoint", "manifest"]:
         errors.append(
-            "VerificationReceipt.profileId must allow WOS profile 1 and Formspec profile 2"
+            "VerificationReceipt.artifactType must enumerate event/checkpoint/manifest"
         )
     schema_verified = (
         defs["VerificationReceipt"]

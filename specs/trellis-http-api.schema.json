@@ -480,7 +480,7 @@
       "type": "object",
       "required": [
         "verified",
-        "profileId",
+        "artifactType",
         "eventType"
       ],
       "properties": {
@@ -488,9 +488,9 @@
           "type": "boolean",
           "description": "True only when the emitted export bundle passed the same independent verifier used in conformance (structure and integrity) at append time."
         },
-        "profileId": {
-          "type": "integer",
-          "enum": [1, 2]
+        "artifactType": {
+          "type": "string",
+          "enum": ["event", "checkpoint", "manifest"]
         },
         "eventType": {
           "$ref": "#/$defs/EventType"

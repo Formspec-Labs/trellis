@@ -7,16 +7,20 @@ use std::backtrace::Backtrace;
 use std::fmt::{Display, Formatter};
 
 use integrity_cose::{
-    derive_kid, protected_header_bytes, sig_structure_bytes, sign_ed25519, sign1_bytes,
+    SUITE_ID_PHASE_1, derive_kid, sig_structure_bytes, sign_ed25519, sign1_bytes,
+    substrate_protected_header,
 };
 use trellis_cddl::{
     append_head_bytes, canonical_event_from_authored, canonical_event_hash_preimage,
     parse_authored_event, parse_ed25519_cose_key,
 };
 use trellis_types::{
-    AUTHOR_EVENT_DOMAIN, AppendArtifacts, AppendHead, EVENT_DOMAIN, StoredEvent,
+    AUTHOR_EVENT_DOMAIN, AppendArtifacts, AppendHead, ArtifactType, EVENT_DOMAIN, StoredEvent,
     domain_separated_sha256,
 };
+
+/// COSE EdDSA algorithm identifier used by Trellis Phase 1.
+const ALG_EDDSA: i32 = -8;
 
 /// Store seam for the append scaffold.
 pub trait LedgerStore {
@@ -119,7 +123,12 @@ pub fn append_event<S: LedgerStore>(
             .map_err(|error| AppendError::new(error.to_string()))?;
 
     let kid = derive_kid(1, parsed_key.public_key);
-    let protected_header = protected_header_bytes(kid);
+    let protected_header = substrate_protected_header(
+        ALG_EDDSA,
+        &kid,
+        SUITE_ID_PHASE_1,
+        ArtifactType::Event.cose_value(),
+    );
     let sig_structure = sig_structure_bytes(&protected_header, &canonical_event);
     let signature = sign_ed25519(parsed_key.private_seed, &sig_structure);
     let signed_event = sign1_bytes(&protected_header, &canonical_event, signature);

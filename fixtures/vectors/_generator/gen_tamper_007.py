@@ -100,7 +100,7 @@ BASELINE_AUTHORED_PREIMAGE_FILE = BASELINE_VECTOR_DIR / "input-author-event-hash
 # Drift-alarm SHA-256 digests on upstream append/001 artifacts. If these drift,
 # regenerate `append/001` first and update here.
 EXPECTED_BASELINE_EVENT_SHA256 = (
-    "3104ec644994ec735cd540bc5f8fcce0cdbdbd1316a2c09c7207742c075ef389"
+    "deca82133a10729c570e277ee38a975b7f6b9e79374052f80069b3863bdd733d"
 )
 EXPECTED_BASELINE_PAYLOAD_SHA256 = (
     # SHA-256(fixtures/vectors/append/001-minimal-inline-payload/
@@ -117,6 +117,10 @@ ALG_EDDSA = -8
 COSE_LABEL_ALG = 1
 COSE_LABEL_KID = 4
 COSE_LABEL_SUITE_ID = -65537
+COSE_LABEL_ARTIFACT_TYPE = -65538
+ARTIFACT_TYPE_EVENT = "event"
+ARTIFACT_TYPE_CHECKPOINT = "checkpoint"
+ARTIFACT_TYPE_MANIFEST = "manifest"
 
 # §8.2 / §8.5 registry values — identical to tamper/001 / tamper/005 / 006.
 ISSUER_VALID_FROM = ts(1745000000)
@@ -173,11 +177,11 @@ def load_issuer_key() -> tuple[bytes, bytes]:
 # §7.4 protected-header + RFC 9052 §4.4 Sig_structure.
 # ---------------------------------------------------------------------------
 
-def build_protected_header(kid: bytes) -> dict:
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
     return {
         COSE_LABEL_ALG:      ALG_EDDSA,
         COSE_LABEL_KID:      kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 

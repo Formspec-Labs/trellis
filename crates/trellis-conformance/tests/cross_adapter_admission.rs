@@ -3,7 +3,7 @@
 //! These tests assert that the two domain admission adapters in this stack
 //! (`trellis-admission-wos`, `trellis-admission-formspec`) agree on the
 //! neutral [`AdmittedEvent`] contract. Known literals must return the
-//! expected profile id + family + URI-like schema ref; unknown literals
+//! expected artifact type + family + URI-like schema ref; unknown literals
 //! must reject before append; payloads validated by one adapter must not
 //! be accepted by the other.
 
@@ -13,6 +13,7 @@ use trellis_admission_wos::WosEventAdmissionPolicy;
 use trellis_server_ports::{
     AdmissionEvent, AdmittedEvent, DirectSubmitPolicy, EventAdmissionPolicy,
 };
+use trellis_types::ArtifactType;
 use wos_events::{ProvenanceKind, ProvenanceRecord, WOS_CANONICAL_EVENT_LITERALS};
 
 fn wos_payload(kind: ProvenanceKind, id: &str) -> Vec<u8> {
@@ -51,14 +52,14 @@ async fn admit_formspec(event_type: &str, payload: &[u8]) -> Result<AdmittedEven
 }
 
 #[tokio::test]
-async fn given_known_wos_literal_when_wos_admits_then_returns_wos_profile_and_family() {
+async fn given_known_wos_literal_when_wos_admits_then_returns_event_artifact_and_family() {
     let payload = wos_payload(ProvenanceKind::CaseCreated, "prov-wos-known");
     let admitted = admit_wos("wos.kernel.case_created", &payload)
         .await
         .expect("known WOS literal admits");
     assert_eq!(admitted.event_type, "wos.kernel.case_created");
     assert_eq!(admitted.event_family.as_str(), "wos.kernel");
-    assert_eq!(admitted.profile_id.get(), integrity_verify::WOS_PROFILE_ID);
+    assert_eq!(admitted.artifact_type, ArtifactType::Event);
     assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
     assert!(
         admitted.schema_ref.as_str().starts_with("wos-events://"),
@@ -68,20 +69,20 @@ async fn given_known_wos_literal_when_wos_admits_then_returns_wos_profile_and_fa
 }
 
 #[tokio::test]
-async fn given_known_formspec_literal_when_formspec_admits_then_returns_formspec_profile() {
+async fn given_known_formspec_literal_when_formspec_admits_then_returns_event_artifact() {
     let payload = formspec_payload();
     let admitted = admit_formspec(FORMSPEC_RESPONSE_SUBMITTED, &payload)
         .await
         .expect("formspec literal admits");
     assert_eq!(admitted.event_type, FORMSPEC_RESPONSE_SUBMITTED);
     assert_eq!(admitted.event_family.as_str(), "formspec.response");
-    assert_eq!(
-        admitted.profile_id.get(),
-        integrity_verify::FORMSPEC_PROFILE_ID
-    );
+    assert_eq!(admitted.artifact_type, ArtifactType::Event);
     assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
     assert!(
-        admitted.schema_ref.as_str().starts_with("formspec-events://"),
+        admitted
+            .schema_ref
+            .as_str()
+            .starts_with("formspec-events://"),
         "Formspec schema ref must use formspec-events scheme; got {}",
         admitted.schema_ref
     );
@@ -138,10 +139,7 @@ async fn given_formspec_payload_when_wos_admits_then_rejects() {
 
 #[tokio::test]
 async fn given_governance_wos_literal_when_admits_then_family_distinguishes_namespace() {
-    let payload = wos_payload(
-        ProvenanceKind::AmendmentAuthorized,
-        "prov-governance-cross",
-    );
+    let payload = wos_payload(ProvenanceKind::AmendmentAuthorized, "prov-governance-cross");
     let admitted = admit_wos("wos.governance.amendment_authorized", &payload)
         .await
         .expect("governance literal admits");

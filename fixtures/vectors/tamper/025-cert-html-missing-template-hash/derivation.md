@@ -17,6 +17,6 @@ kind is correct for a CDDL-shape rejection at decode.
 TR-OP-131 covers the operator-side discipline: HTML presentations MUST
 ship with template_hash. This vector is the verifier-side gate.
 
-Failing canonical_event_hash: `95c6190f4d1e6401fa84ba7773f5ab223644481e4fed5fd886ae13b8af090359`.
+Failing canonical_event_hash: `c4efa8720859bd6ae8a845cceafbd23c30bdb4f804c095bf9907d3470a6f0a4c`.
 
 Generator: `_generator/gen_tamper_021_023_025_026.py`.

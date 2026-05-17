@@ -64,7 +64,7 @@ const FORBIDDEN_DOMAIN_ROOTS: &[&str] = &[
 ];
 
 /// String-prefix dispatch tokens forbidden in generic service code; the
-/// admission contract supplies `event_family` / `profile_id` instead.
+/// admission contract supplies `event_family` / `artifact_type` instead.
 const FORBIDDEN_PREFIX_DISPATCH_TOKENS: &[&str] = &[
     "starts_with(\"wos.\")",
     "starts_with(\"substrate.append.\")",
@@ -73,7 +73,10 @@ const FORBIDDEN_PREFIX_DISPATCH_TOKENS: &[&str] = &[
 #[test]
 fn neutral_crates_have_no_domain_dependencies() {
     for crate_name in NEUTRAL_CRATES {
-        let manifest_path = trellis_root().join("crates").join(crate_name).join("Cargo.toml");
+        let manifest_path = trellis_root()
+            .join("crates")
+            .join(crate_name)
+            .join("Cargo.toml");
         let manifest = fs::read_to_string(&manifest_path)
             .unwrap_or_else(|err| panic!("read {manifest_path:?}: {err}"));
         let deps_section = normal_dependency_section(&manifest);
@@ -199,9 +202,11 @@ fn service_client_contains_wos_imports_to_extension_helper_module() {
     // root and any other module must remain WOS-agnostic so the shared HTTP
     // client stays reusable by Formspec and future producers without
     // inheriting WOS dialect.
-    let client_root = trellis_root().join("crates").join("trellis-service-client").join("src");
-    let entries =
-        fs::read_dir(&client_root).expect("read trellis-service-client src directory");
+    let client_root = trellis_root()
+        .join("crates")
+        .join("trellis-service-client")
+        .join("src");
+    let entries = fs::read_dir(&client_root).expect("read trellis-service-client src directory");
     for entry in entries {
         let entry = entry.expect("entry");
         let path = entry.path();
@@ -213,8 +218,7 @@ fn service_client_contains_wos_imports_to_extension_helper_module() {
         if !file_name.ends_with(".rs") || file_name == "wos_ext.rs" {
             continue;
         }
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("read {path:?}: {err}"));
+        let source = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"));
         let production_source = strip_test_modules(&source);
         for line in production_source.lines() {
             let stripped = line.trim_start();
@@ -236,7 +240,10 @@ fn service_client_contains_wos_imports_to_extension_helper_module() {
 /// [`GENERIC_SERVER_DENYLIST`]. Adding a new generic module automatically
 /// falls under the gate.
 fn read_generic_server_files() -> Vec<(String, String)> {
-    let server_root = trellis_root().join("crates").join("trellis-server").join("src");
+    let server_root = trellis_root()
+        .join("crates")
+        .join("trellis-server")
+        .join("src");
     let mut files = Vec::new();
     for entry in fs::read_dir(&server_root).expect("read trellis-server src directory") {
         let entry = entry.expect("entry");
@@ -255,8 +262,7 @@ fn read_generic_server_files() -> Vec<(String, String)> {
         if GENERIC_SERVER_DENYLIST.contains(&file_name.as_str()) {
             continue;
         }
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("read {path:?}: {err}"));
+        let source = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"));
         files.push((file_name, source));
     }
     // Include the bin entrypoint when it exists; it's a generic production
@@ -277,8 +283,8 @@ fn read_generic_server_files() -> Vec<(String, String)> {
             if !file_name.ends_with(".rs") {
                 continue;
             }
-            let source = fs::read_to_string(&path)
-                .unwrap_or_else(|err| panic!("read {path:?}: {err}"));
+            let source =
+                fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"));
             files.push((format!("bin/{file_name}"), source));
         }
     }
@@ -351,7 +357,10 @@ fn strip_test_modules(source: &str) -> String {
 }
 
 fn read_manifest(crate_name: &str) -> String {
-    let path = trellis_root().join("crates").join(crate_name).join("Cargo.toml");
+    let path = trellis_root()
+        .join("crates")
+        .join(crate_name)
+        .join("Cargo.toml");
     fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"))
 }
 

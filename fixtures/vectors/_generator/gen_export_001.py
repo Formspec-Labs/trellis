@@ -49,6 +49,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     ZIP_FIXED_DATETIME,
     dcbor,
@@ -129,12 +133,12 @@ def derive_kid(suite_id: int, pubkey_raw: bytes) -> bytes:
     return hashlib.sha256(dcbor(suite_id) + pubkey_raw).digest()[:16]
 
 
-def build_protected_header(kid: bytes) -> dict:
-    # ?7.4 three mandatory headers; dCBOR map-key ordering handled at encode.
+def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
+    # ?7.4 / ADR 0109 substrate headers; dCBOR map-key ordering handled at encode.
     return {
         COSE_LABEL_ALG: ALG_EDDSA,
         COSE_LABEL_KID: kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID,
+        COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     }
 
 
@@ -145,8 +149,8 @@ def build_sig_structure(protected_bstr: bytes, payload_bstr: bytes) -> bytes:
     return dcbor(["Signature1", protected_bstr, b"", payload_bstr])
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
-    protected_map_bytes = dcbor(build_protected_header(kid))
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
+    protected_map_bytes = dcbor(build_protected_header(kid, artifact_type))
     sig_structure = build_sig_structure(protected_map_bytes, payload_bytes)
     signature = Ed25519PrivateKey.from_private_bytes(seed).sign(sig_structure)
     sign1 = [protected_map_bytes, {}, payload_bytes, signature]
@@ -282,8 +286,8 @@ def main(out_dir: Path) -> None:
         "extensions": None,
     }
     digest_2 = checkpoint_digest(ledger_scope, checkpoint_payload_2)
-    checkpoint_1_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload_1))
-    checkpoint_2_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload_2))
+    checkpoint_1_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload_1), ARTIFACT_TYPE_CHECKPOINT)
+    checkpoint_2_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload_2), ARTIFACT_TYPE_CHECKPOINT)
     checkpoints_cbor = b"\x82" + checkpoint_1_bytes + checkpoint_2_bytes
     head_checkpoint_digest = digest_2
 
@@ -384,7 +388,7 @@ def main(out_dir: Path) -> None:
         "extensions": None,
     }
     manifest_payload_bytes = dcbor(manifest_payload)
-    signed_manifest_bytes = cose_sign1(seed, kid, manifest_payload_bytes)
+    signed_manifest_bytes = cose_sign1(seed, kid, manifest_payload_bytes, ARTIFACT_TYPE_MANIFEST)
     write_bytes(out_dir / "000-manifest.cbor", signed_manifest_bytes)
 
     # 12) Assemble deterministic ZIP (?18.1, ?18.2).

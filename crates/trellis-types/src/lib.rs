@@ -40,16 +40,6 @@ pub const COSE_LABEL_SUITE_ID: i128 = -65_537;
 /// [`COSE_LABEL_SUITE_ID`] (here `n = 65536` gives `-65537`).
 pub const COSE_SUITE_ID_LABEL_MAGNITUDE: u64 = 65_536;
 
-/// COSE protected-header map label for Trellis `profile_id` (Core §7.4).
-///
-/// The label follows the sequentially-descending Trellis private-use header
-/// allocation after `suite_id = -65537` and `artifact_type = -65538`.
-pub const COSE_LABEL_PROFILE_ID: i128 = -65_539;
-
-/// Unsigned magnitude `n` such that the CBOR negative integer `-1 - n` equals
-/// [`COSE_LABEL_PROFILE_ID`] (here `n = 65538` gives `-65539`).
-pub const COSE_PROFILE_ID_LABEL_MAGNITUDE: u64 = 65_538;
-
 /// COSE protected-header map label for Trellis `artifact_type` (Core §7.4 / ADR 0109).
 ///
 /// Closed-enum tstr value; see [`ArtifactType`]. Required on every Trellis
@@ -73,7 +63,8 @@ pub const COSE_ARTIFACT_TYPE_LABEL_MAGNITUDE: u64 = 65_537;
 /// - [`ArtifactType::Event`] — Trellis ledger event (the chained, append-only entry).
 /// - [`ArtifactType::Checkpoint`] — Trellis Merkle checkpoint (range-sealing artifact).
 /// - [`ArtifactType::Manifest`] — Trellis export manifest (bundle catalog root).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum ArtifactType {
     /// Trellis ledger event — the chained, append-only entry.
     Event,
@@ -321,14 +312,6 @@ pub fn encode_cose_suite_id_label() -> Vec<u8> {
     encode_cbor_negative_int(COSE_SUITE_ID_LABEL_MAGNITUDE)
 }
 
-/// Encodes the CBOR map key bytes for [`COSE_LABEL_PROFILE_ID`].
-///
-/// Equivalent to canonical CBOR for integer `-65539` (`-1 - 65538`).
-#[must_use]
-pub fn encode_cose_profile_id_label() -> Vec<u8> {
-    encode_cbor_negative_int(COSE_PROFILE_ID_LABEL_MAGNITUDE)
-}
-
 /// Encodes the CBOR map key bytes for [`COSE_LABEL_ARTIFACT_TYPE`] (ADR 0109).
 ///
 /// Equivalent to canonical CBOR for integer `-65538` (`-1 - 65537`).
@@ -356,8 +339,8 @@ pub fn checkpoint_digest(scope: &[u8], payload_bytes: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_cose_artifact_type_label, encode_cose_profile_id_label, encode_cose_suite_id_label,
-        encode_uint, ArtifactType, ArtifactTypeError,
+        ArtifactType, ArtifactTypeError, encode_cose_artifact_type_label,
+        encode_cose_suite_id_label, encode_uint,
     };
 
     #[test]
@@ -370,14 +353,6 @@ mod tests {
         assert_eq!(
             encode_cose_suite_id_label(),
             vec![0x3a, 0x00, 0x01, 0x00, 0x00]
-        );
-    }
-
-    #[test]
-    fn encode_cose_profile_id_label_matches_allocated_bytes() {
-        assert_eq!(
-            encode_cose_profile_id_label(),
-            vec![0x3a, 0x00, 0x01, 0x00, 0x02]
         );
     }
 

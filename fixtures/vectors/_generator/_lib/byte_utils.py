@@ -25,6 +25,14 @@ COSE_LABEL_KID: int = 4
 # §7.4: Trellis-reserved label for suite_id in the COSE protected header.
 # Must match `trellis_types::COSE_LABEL_SUITE_ID` in `crates/trellis-types`.
 COSE_LABEL_SUITE_ID: int = -65537
+# §7.4 / ADR 0109: Trellis-reserved label for substrate artifact_type.
+# Must match `trellis_types::COSE_LABEL_ARTIFACT_TYPE` in `crates/trellis-types`.
+COSE_LABEL_ARTIFACT_TYPE: int = -65538
+
+# §7.4 / ADR 0109 closed substrate artifact_type values.
+ARTIFACT_TYPE_EVENT: str = "event"
+ARTIFACT_TYPE_CHECKPOINT: str = "checkpoint"
+ARTIFACT_TYPE_MANIFEST: str = "manifest"
 
 # §7.1 COSE algorithm value for EdDSA.
 ALG_EDDSA: int = -8

@@ -46,7 +46,7 @@ ADR 0010 §"Wire shape" positive vector for `trellis.user-content-attestation.v1
 ## Phase-1 verifier posture
 
 Per `decode_user_content_attestation_payload` in
-`crates/trellis-verify/src/lib.rs`: this vector exercises step 1 (CDDL decode)
+`integrity-verify::trellis`: this vector exercises step 1 (CDDL decode)
 and step 2 partial (`attested_at == authored_at`; `signing_intent` RFC 3986
 well-formedness) at the per-event path. Cross-event steps 3 / 4 / 5 / 6 / 7 / 8
 require multi-event chain context and exercise via `tamper/028..034`.

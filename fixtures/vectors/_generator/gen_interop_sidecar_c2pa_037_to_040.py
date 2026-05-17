@@ -51,6 +51,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     deterministic_zipinfo,
@@ -117,18 +121,18 @@ def derive_kid(suite_id: int, pubkey_raw: bytes) -> bytes:
     return hashlib.sha256(dcbor(suite_id) + pubkey_raw).digest()[:16]
 
 
-def protected_header(kid: bytes) -> bytes:
+def protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     return dcbor(
         {
             COSE_LABEL_ALG: ALG_EDDSA,
             COSE_LABEL_KID: kid,
-            COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1,
+            COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
         }
     )
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
-    protected = protected_header(kid)
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
+    protected = protected_header(kid, artifact_type)
     sig_structure = dcbor(["Signature1", protected, b"", payload_bytes])
     signature = Ed25519PrivateKey.from_private_bytes(seed).sign(sig_structure)
     return dcbor(CBORTag(CBOR_TAG_COSE_SIGN1, [protected, {}, payload_bytes, signature]))
@@ -182,7 +186,7 @@ def emit_signed_manifest(
     seed: bytes, kid: bytes, payload: dict
 ) -> bytes:
     payload_bytes = dcbor(payload)
-    return cose_sign1(seed, kid, payload_bytes)
+    return cose_sign1(seed, kid, payload_bytes, ARTIFACT_TYPE_MANIFEST)
 
 
 # ---------------------------------------------------------------------------

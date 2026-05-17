@@ -59,6 +59,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     domain_separated_sha256,
@@ -119,12 +123,12 @@ def write_text(out_dir: Path, name: str, text: str) -> None:
     path.write_text(text)
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     protected = dcbor(
         {
             COSE_LABEL_ALG: ALG_EDDSA,
             COSE_LABEL_KID: kid,
-            COSE_LABEL_SUITE_ID: SUITE_ID,
+            COSE_LABEL_SUITE_ID: SUITE_ID, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
         }
     )
     sig_structure = dcbor(["Signature1", protected, b"", payload_bytes])

@@ -105,35 +105,6 @@ impl std::fmt::Display for SchemaRefError {
 
 impl std::error::Error for SchemaRefError {}
 
-/// Stable identifier for the verification profile bound to an event family.
-///
-/// Profile ids are bit-identical to the integers serialized in
-/// [`trellis_service_client::VerificationReceipt`] so that wire compatibility
-/// holds across the admission refactor. Generic Trellis service code must use
-/// this value rather than re-parsing event-type prefixes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ProfileId(u64);
-
-impl ProfileId {
-    /// Wraps a profile-id constant from `integrity_verify`.
-    #[must_use]
-    pub const fn new(value: u64) -> Self {
-        Self(value)
-    }
-
-    /// Returns the underlying u64 used on the wire.
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-impl std::fmt::Display for ProfileId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// Logical event-family identifier emitted by admission for catalog/projection routing.
 ///
 /// Generic Trellis code dispatches on the family rather than the wire literal
@@ -472,12 +443,6 @@ pub struct AdmittedEvent {
     pub event_family: EventFamilyId,
     /// Validated event-type catalog reference.
     pub schema_ref: SchemaRef,
-    /// Verification profile bound to this event family.
-    ///
-    /// Retired by ADR 0109; field retained during the migration window.
-    /// Consumers MUST switch to [`AdmittedEvent::artifact_type`] for the
-    /// substrate structural-role contract.
-    pub profile_id: ProfileId,
     /// Substrate structural role (ADR 0109).
     ///
     /// Always [`ArtifactType::Event`] — admission emits events. Carried here
@@ -904,18 +869,16 @@ pub struct BudgetReviewRecord {
 
 /// Event type registration request.
 ///
-/// Carries the full neutral metadata (`event_family`, `profile_id`,
-/// `artifact_type`, `direct_submit`) so the event-type catalog projection and
+/// Carries the full neutral metadata (`event_family`, `artifact_type`,
+/// `direct_submit`) so the event-type catalog projection and
 /// downstream readers consult one source of truth instead of re-parsing the
-/// literal. `profile_id` is retired by ADR 0109; `artifact_type` is canonical.
+/// literal. `artifact_type` is the substrate structural role.
 /// This mirrors the [`AdmittedEvent`] contract for the registration path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventTypeSpec {
     pub event_type: EventType,
     pub event_family: EventFamilyId,
     pub schema_ref: SchemaRef,
-    /// Retired by ADR 0109; retained during the migration window.
-    pub profile_id: ProfileId,
     /// Substrate structural role (ADR 0109) — always [`ArtifactType::Event`].
     pub artifact_type: ArtifactType,
     pub direct_submit: DirectSubmitPolicy,
@@ -928,8 +891,6 @@ pub struct EventTypeRef {
     pub event_type: EventType,
     pub event_family: EventFamilyId,
     pub schema_ref: SchemaRef,
-    /// Retired by ADR 0109; retained during the migration window.
-    pub profile_id: ProfileId,
     /// Substrate structural role (ADR 0109) — always [`ArtifactType::Event`].
     pub artifact_type: ArtifactType,
     pub direct_submit: DirectSubmitPolicy,
@@ -987,7 +948,6 @@ impl EventTypeRegistry for ReviewGateEventTypeRegistry {
             event_type: spec.event_type,
             event_family: spec.event_family,
             schema_ref: spec.schema_ref,
-            profile_id: spec.profile_id,
             artifact_type: spec.artifact_type,
             direct_submit: spec.direct_submit,
         };
@@ -1188,14 +1148,12 @@ mod tests {
         let mut registry = ReviewGateEventTypeRegistry::default();
         let schema = SchemaRef::new("schema:v1").expect("valid schema ref");
         let family = EventFamilyId::new("wos.kernel").expect("non-empty family");
-        let profile_id = ProfileId::new(1);
 
         let err = registry
             .register(EventTypeSpec {
                 event_type: "wos.kernel.case_created".to_string(),
                 event_family: family.clone(),
                 schema_ref: schema.clone(),
-                profile_id,
                 artifact_type: ArtifactType::Event,
                 direct_submit: DirectSubmitPolicy::ServiceOnly,
                 budget_review: BudgetReviewRecord {
@@ -1212,7 +1170,6 @@ mod tests {
                 event_type: "wos.kernel.case_created".to_string(),
                 event_family: family,
                 schema_ref: schema,
-                profile_id,
                 artifact_type: ArtifactType::Event,
                 direct_submit: DirectSubmitPolicy::ServiceOnly,
                 budget_review: BudgetReviewRecord {
@@ -1224,7 +1181,7 @@ mod tests {
             .expect("register");
         assert_eq!(event_ref.schema_ref.as_str(), "schema:v1");
         assert_eq!(event_ref.event_family.as_str(), "wos.kernel");
-        assert_eq!(event_ref.profile_id.get(), 1);
+        assert_eq!(event_ref.artifact_type, ArtifactType::Event);
         assert_eq!(event_ref.direct_submit, DirectSubmitPolicy::ServiceOnly);
 
         // After registration the registry is the catalog's source of truth.
@@ -1268,24 +1225,9 @@ mod tests {
     }
 
     #[test]
-    fn given_profile_id_constants_when_wrapped_then_round_trip_preserves_wire_int() {
-        let wos = ProfileId::new(1);
-        let formspec = ProfileId::new(2);
-        assert_eq!(wos.get(), 1);
-        assert_eq!(formspec.get(), 2);
-        assert_ne!(wos, formspec);
-    }
-
-    #[test]
     fn given_event_family_id_when_built_then_rejects_empty() {
-        assert_eq!(
-            EventFamilyId::new(""),
-            Err(EventFamilyIdError::Empty)
-        );
-        assert_eq!(
-            EventFamilyId::new("   "),
-            Err(EventFamilyIdError::Empty)
-        );
+        assert_eq!(EventFamilyId::new(""), Err(EventFamilyIdError::Empty));
+        assert_eq!(EventFamilyId::new("   "), Err(EventFamilyIdError::Empty));
         let family = EventFamilyId::new("wos.kernel").expect("non-empty");
         assert_eq!(family.as_str(), "wos.kernel");
     }
@@ -1296,13 +1238,11 @@ mod tests {
             event_type: "wos.kernel.case_created".to_string(),
             event_family: EventFamilyId::new("wos.kernel").expect("family"),
             schema_ref: SchemaRef::new("wos-events://wos.kernel.case_created").expect("schema"),
-            profile_id: ProfileId::new(1),
             artifact_type: ArtifactType::Event,
             direct_submit: DirectSubmitPolicy::ServiceOnly,
         };
         assert_eq!(admitted.event_type, "wos.kernel.case_created");
         assert_eq!(admitted.event_family.as_str(), "wos.kernel");
-        assert_eq!(admitted.profile_id.get(), 1);
         assert_eq!(admitted.artifact_type, ArtifactType::Event);
         assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
     }

@@ -20,7 +20,7 @@ Per ADR 0007 §"Field semantics" `certificate_id` clause:
 events and runs the collision pass; it reports
 `certificate_id_collision` localized to event 1's canonical_event_hash.
 
-Event 0 canonical_event_hash: `eca2892b2c4d1ccf973067aa12a5aeb633baaaf89a9765e76c03964684e5ac5c`
-Event 1 canonical_event_hash: `a8e0bd7ab927c61a0ee144702d540c96fbafc6a0eae264ec932610881f737f06` (failing event)
+Event 0 canonical_event_hash: `177d9ac38e9bbdce3af5a060605de661ff118393d5b2be9267d31abd461936b2`
+Event 1 canonical_event_hash: `9be3432a1d085b4055b53fdebc6fa4fe0fc8536f793eda57afe1ef17dcbc03cd` (failing event)
 
 Generator: `_generator/gen_tamper_021_023_025_026.py`.

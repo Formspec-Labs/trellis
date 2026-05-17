@@ -205,8 +205,8 @@ mod tests {
             payload: payload.as_slice(),
         };
         let admitted = policy.admit(&event).await.expect("wos branch admits");
-        assert_eq!(admitted.profile_id.get(), integrity_verify::WOS_PROFILE_ID);
         assert_eq!(admitted.event_family.as_str(), "wos.kernel");
+        assert_eq!(admitted.artifact_type, trellis_types::ArtifactType::Event);
     }
 
     #[tokio::test]
@@ -219,11 +219,8 @@ mod tests {
             payload,
         };
         let admitted = policy.admit(&event).await.expect("formspec branch admits");
-        assert_eq!(
-            admitted.profile_id.get(),
-            integrity_verify::FORMSPEC_PROFILE_ID
-        );
         assert_eq!(admitted.event_family.as_str(), "formspec.response");
+        assert_eq!(admitted.artifact_type, trellis_types::ArtifactType::Event);
     }
 
     #[tokio::test]
@@ -237,7 +234,10 @@ mod tests {
             event_type: "c2pa.assertion.created",
             payload: b"{}",
         };
-        let err = policy.admit(&event).await.expect_err("unregistered must reject");
+        let err = policy
+            .admit(&event)
+            .await
+            .expect_err("unregistered must reject");
         assert!(
             err.to_string().contains("not registered for admission"),
             "router must surface the registration gap; got: {err}"
@@ -267,19 +267,17 @@ mod tests {
         let adapter: Arc<dyn EventAdmissionPolicy<Error = StackError>> =
             Arc::new(ConstantAdapter(AdmittedEvent {
                 event_type: "x-test.overlay.synthetic".to_string(),
-                event_family: trellis_server_ports::EventFamilyId::new("x-test.overlay")
-                    .unwrap(),
+                event_family: trellis_server_ports::EventFamilyId::new("x-test.overlay").unwrap(),
                 schema_ref: trellis_server_ports::SchemaRef::new(
                     "x-test://x-test.overlay.synthetic",
                 )
                 .unwrap(),
-                profile_id: trellis_server_ports::ProfileId::new(42),
                 artifact_type: trellis_types::ArtifactType::Event,
                 direct_submit: trellis_server_ports::DirectSubmitPolicy::ServiceOnly,
             }));
 
-        let router = AdmissionRouter::new()
-            .register_for_literals(adapter, ["x-test.overlay.synthetic"]);
+        let router =
+            AdmissionRouter::new().register_for_literals(adapter, ["x-test.overlay.synthetic"]);
         assert!(router.handles("x-test.overlay.synthetic"));
         let admitted = router
             .admit(&AdmissionEvent {
@@ -289,26 +287,37 @@ mod tests {
             })
             .await
             .expect("registered overlay admits");
-        assert_eq!(admitted.profile_id.get(), 42);
+        assert_eq!(admitted.artifact_type, trellis_types::ArtifactType::Event);
     }
 
     #[test]
     fn given_event_type_specs_when_combined_then_include_wos_and_formspec_literals() {
         let specs = default_event_type_specs();
-        assert!(specs.iter().any(|spec| spec.event_type == "wos.kernel.case_created"));
-        assert!(specs.iter().any(|spec| spec.event_type == FORMSPEC_RESPONSE_SUBMITTED));
+        assert!(
+            specs
+                .iter()
+                .any(|spec| spec.event_type == "wos.kernel.case_created")
+        );
+        assert!(
+            specs
+                .iter()
+                .any(|spec| spec.event_type == FORMSPEC_RESPONSE_SUBMITTED)
+        );
     }
 
     #[test]
-    fn given_event_type_specs_when_collected_then_carry_family_profile_and_direct_submit() {
+    fn given_event_type_specs_when_collected_then_carry_family_artifact_and_direct_submit() {
         let specs = default_event_type_specs();
         let wos = specs
             .iter()
             .find(|spec| spec.event_type == "wos.kernel.case_created")
             .expect("WOS kernel spec");
         assert_eq!(wos.event_family.as_str(), "wos.kernel");
-        assert_eq!(wos.profile_id.get(), integrity_verify::WOS_PROFILE_ID);
-        assert_eq!(wos.direct_submit, trellis_server_ports::DirectSubmitPolicy::ServiceOnly);
+        assert_eq!(wos.artifact_type, trellis_types::ArtifactType::Event);
+        assert_eq!(
+            wos.direct_submit,
+            trellis_server_ports::DirectSubmitPolicy::ServiceOnly
+        );
 
         let governance = specs
             .iter()
@@ -321,9 +330,6 @@ mod tests {
             .find(|spec| spec.event_type == FORMSPEC_RESPONSE_SUBMITTED)
             .expect("Formspec spec");
         assert_eq!(formspec.event_family.as_str(), "formspec.response");
-        assert_eq!(
-            formspec.profile_id.get(),
-            integrity_verify::FORMSPEC_PROFILE_ID
-        );
+        assert_eq!(formspec.artifact_type, trellis_types::ArtifactType::Event);
     }
 }

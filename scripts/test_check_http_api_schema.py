@@ -41,13 +41,13 @@ class TestCheckHttpApiSchema(unittest.TestCase):
         from_kind = self.module.parse_substrate_event_literals_from_kind_rs(kind_text)
         self.assertEqual(literals, from_kind)
 
-    def test_given_profile_id_const_lock_when_check_defs_then_error_emitted(self) -> None:
+    def test_given_artifact_type_const_lock_when_check_defs_then_error_emitted(self) -> None:
         schema = self.module.read_json(self.module.SCHEMA_PATH)
-        schema["$defs"]["VerificationReceipt"]["properties"]["profileId"]["const"] = 2
+        schema["$defs"]["VerificationReceipt"]["properties"]["artifactType"]["const"] = "event"
         errors: list[str] = []
         self.module.check_defs(schema, self.server_source, self.client_source, errors)
         self.assertIn(
-            "VerificationReceipt.profileId must not const-lock a single global profile",
+            "VerificationReceipt.artifactType must not const-lock a single value",
             errors,
         )
 
@@ -86,17 +86,17 @@ class TestCheckHttpApiSchema(unittest.TestCase):
             msg=errors,
         )
 
-    def test_given_server_missing_admitted_profile_when_check_defs_then_error_emitted(
+    def test_given_server_missing_admitted_artifact_type_when_check_defs_then_error_emitted(
         self,
     ) -> None:
-        # DI-000/DI-003: assert the new AdmittedEvent.profile_id contract is
-        # present (replaces the deleted profile_id_for_admitted_event check).
+        # ADR 0109: assert the new AdmittedEvent.artifact_type contract is
+        # present.
         server_source = self.server_source.replace("AdmittedEvent", "RetiredEnvelope")
-        server_source = server_source.replace("profile_id: ProfileId", "profile_id: u64")
+        server_source = server_source.replace("artifact_type: ArtifactType", "artifact_type: String")
         errors: list[str] = []
         self.module.check_defs(self.schema, server_source, self.client_source, errors)
         self.assertTrue(
-            any("AdmittedEvent.profile_id" in error for error in errors),
+            any("AdmittedEvent.artifact_type" in error for error in errors),
             msg=errors,
         )
 

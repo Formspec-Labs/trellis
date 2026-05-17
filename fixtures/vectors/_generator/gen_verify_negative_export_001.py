@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 # Sibling `_lib` package import (same pattern as gen_export_001.py).
@@ -39,6 +40,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     dcbor,
     deterministic_zipinfo,
     domain_separated_sha256,
@@ -103,7 +108,7 @@ def resign_with_same_protected(sign1_bytes: bytes, *, new_payload: bytes) -> byt
     if not isinstance(tag, cbor2.CBORTag) or tag.tag != CBOR_TAG_COSE_SIGN1:
         raise ValueError("input must be a COSE_Sign1 tag-18 envelope")
     array = tag.value
-    if not isinstance(array, list) or len(array) != 4:
+    if not isinstance(array, (list, tuple)) or len(array) != 4:
         raise ValueError("COSE_Sign1 must be a 4-element array")
     protected_bstr = array[0]
     if not isinstance(protected_bstr, bytes):
@@ -120,15 +125,16 @@ def mutate_manifest(
     if not isinstance(tag, cbor2.CBORTag) or tag.tag != CBOR_TAG_COSE_SIGN1:
         raise ValueError("manifest must be a COSE_Sign1 tag-18 envelope")
     array = tag.value
-    if not isinstance(array, list) or len(array) != 4:
+    if not isinstance(array, (list, tuple)) or len(array) != 4:
         raise ValueError("COSE_Sign1 must be a 4-element array")
     protected_bstr = array[0]
     payload = array[2]
     if not isinstance(protected_bstr, bytes) or not isinstance(payload, bytes):
         raise ValueError("unexpected COSE_Sign1 protected/payload types")
     protected_map = cbor2.loads(protected_bstr)
-    if not isinstance(protected_map, dict):
+    if not isinstance(protected_map, Mapping):
         raise ValueError("protected header must decode to a CBOR map")
+    protected_map = dict(protected_map)
 
     if new_kid is not None:
         if not isinstance(new_kid, bytes) or len(new_kid) != 16:
@@ -214,14 +220,14 @@ def main() -> None:
     # verify/006: checkpoint root mismatch (step 5.c localizable failure).
     checkpoints_bytes = (SOURCE_EXPORT_DIR / "040-checkpoints.cbor").read_bytes()
     checkpoints = cbor2.loads(checkpoints_bytes)
-    if not isinstance(checkpoints, list) or len(checkpoints) != 2:
+    if not isinstance(checkpoints, (list, tuple)) or len(checkpoints) != 2:
         raise ValueError("export/001 expected 2 checkpoints")
     head_checkpoint = checkpoints[1]
     if not isinstance(head_checkpoint, cbor2.CBORTag) or head_checkpoint.tag != CBOR_TAG_COSE_SIGN1:
         raise ValueError("checkpoint must be COSE_Sign1 tag-18")
     head_array = head_checkpoint.value
     head_payload_bstr = head_array[2]
-    head_payload = cbor2.loads(head_payload_bstr)
+    head_payload = dict(cbor2.loads(head_payload_bstr))
     # Flip one bit of tree_head_hash while preserving digest length.
     thh = head_payload["tree_head_hash"]
     if not isinstance(thh, bytes) or len(thh) != 32:
@@ -243,7 +249,7 @@ def main() -> None:
     manifest_bytes = (SOURCE_EXPORT_DIR / "000-manifest.cbor").read_bytes()
     manifest_tag = cbor2.loads(manifest_bytes)
     manifest_payload_bstr = manifest_tag.value[2]
-    manifest_payload = cbor2.loads(manifest_payload_bstr)
+    manifest_payload = dict(cbor2.loads(manifest_payload_bstr))
     manifest_payload["checkpoints_digest"] = sha256(checkpoints_new)
     manifest_payload["head_checkpoint_digest"] = checkpoint_digest(
         manifest_payload["scope"], head_payload
@@ -265,9 +271,10 @@ def main() -> None:
     # verify/007: inclusion proof mismatch (step 7.b localizable failure).
     inclusion_bytes = (SOURCE_EXPORT_DIR / "020-inclusion-proofs.cbor").read_bytes()
     inclusion = cbor2.loads(inclusion_bytes)
-    if not isinstance(inclusion, dict) or 0 not in inclusion:
+    if not isinstance(inclusion, Mapping) or 0 not in inclusion:
         raise ValueError("export/001 expected inclusion proof map with key 0")
-    ip0 = inclusion[0]
+    inclusion = dict(inclusion)
+    ip0 = dict(inclusion[0])
     # Flip one bit in leaf_hash.
     leaf_hash = ip0["leaf_hash"]
     if not isinstance(leaf_hash, bytes) or len(leaf_hash) != 32:
@@ -277,7 +284,7 @@ def main() -> None:
     inclusion_new = dcbor(inclusion)
 
     manifest_tag = cbor2.loads(manifest_bytes)
-    manifest_payload = cbor2.loads(manifest_tag.value[2])
+    manifest_payload = dict(cbor2.loads(manifest_tag.value[2]))
     manifest_payload["inclusion_proofs_digest"] = sha256(inclusion_new)
     manifest_payload_new = dcbor(manifest_payload)
     manifest_resigned = resign_with_same_protected(
@@ -296,14 +303,14 @@ def main() -> None:
     # verify/008: prev_checkpoint_hash mismatch (step 5.d localizable failure).
     checkpoints_bytes = (SOURCE_EXPORT_DIR / "040-checkpoints.cbor").read_bytes()
     checkpoints = cbor2.loads(checkpoints_bytes)
-    if not isinstance(checkpoints, list) or len(checkpoints) != 2:
+    if not isinstance(checkpoints, (list, tuple)) or len(checkpoints) != 2:
         raise ValueError("export/001 expected 2 checkpoints")
     head_checkpoint = checkpoints[1]
     if not isinstance(head_checkpoint, cbor2.CBORTag) or head_checkpoint.tag != CBOR_TAG_COSE_SIGN1:
         raise ValueError("checkpoint must be COSE_Sign1 tag-18")
     head_array = head_checkpoint.value
     head_payload_bstr = head_array[2]
-    head_payload = cbor2.loads(head_payload_bstr)
+    head_payload = dict(cbor2.loads(head_payload_bstr))
     prev_checkpoint_hash = head_payload["prev_checkpoint_hash"]
     if not isinstance(prev_checkpoint_hash, bytes) or len(prev_checkpoint_hash) != 32:
         raise ValueError("expected 32-byte prev_checkpoint_hash")
@@ -319,7 +326,7 @@ def main() -> None:
     checkpoints_new = b"\x82" + checkpoint_0_bytes + head_checkpoint_resigned
 
     manifest_tag = cbor2.loads(manifest_bytes)
-    manifest_payload = cbor2.loads(manifest_tag.value[2])
+    manifest_payload = dict(cbor2.loads(manifest_tag.value[2]))
     manifest_payload["checkpoints_digest"] = sha256(checkpoints_new)
     manifest_payload["head_checkpoint_digest"] = checkpoint_digest(
         manifest_payload["scope"], head_payload
@@ -341,14 +348,17 @@ def main() -> None:
     # verify/009: consistency proof mismatch (step 5.e localizable failure).
     consistency_bytes = (SOURCE_EXPORT_DIR / "025-consistency-proofs.cbor").read_bytes()
     consistency = cbor2.loads(consistency_bytes)
-    if not isinstance(consistency, list) or len(consistency) != 1:
+    if not isinstance(consistency, (list, tuple)) or len(consistency) != 1:
         raise ValueError("export/001 expected 1 consistency proof record")
+    consistency = list(consistency)
     proof_record = consistency[0]
-    if not isinstance(proof_record, dict):
+    if not isinstance(proof_record, Mapping):
         raise ValueError("consistency proof record must be a map")
+    proof_record = dict(proof_record)
     proof_path = proof_record["proof_path"]
-    if not isinstance(proof_path, list) or len(proof_path) != 1:
+    if not isinstance(proof_path, (list, tuple)) or len(proof_path) != 1:
         raise ValueError("export/001 expected 1 proof_path node")
+    proof_path = list(proof_path)
     sibling = proof_path[0]
     if not isinstance(sibling, bytes) or len(sibling) != 32:
         raise ValueError("expected 32-byte consistency proof node")
@@ -358,7 +368,7 @@ def main() -> None:
     consistency_new = dcbor(consistency)
 
     manifest_tag = cbor2.loads(manifest_bytes)
-    manifest_payload = cbor2.loads(manifest_tag.value[2])
+    manifest_payload = dict(cbor2.loads(manifest_tag.value[2]))
     manifest_payload["consistency_proofs_digest"] = sha256(consistency_new)
     manifest_payload_new = dcbor(manifest_payload)
     manifest_resigned = resign_with_same_protected(

@@ -1,27 +1,22 @@
-id = "tamper/023-cert-attestation-malformed"
-op = "tamper"
-status = "active"
-description = "ADR 0007 §\"Verifier obligations\" step 3 violation: certificate `attestations[0].signature` truncated from 64 → 63 bytes. Source: `append/028-certificate-of-completion-minimal-pdf` with attestation signature shortened. Phase-1 reference verifier emits `attestation_insufficient` (existing Core §19.1 kind, reused per ADR 0007 §\"Verifier obligations\" step 3). Generator: `_generator/gen_tamper_021_023_025_026.py`."
+id          = "tamper/023-cert-attestation-malformed"
+op          = "tamper"
+status      = "active"
+description = """ADR 0007 §"Verifier obligations" step 3 violation: certificate `attestations[0].signature` truncated from 64 → 63 bytes. Source: `append/028-certificate-of-completion-minimal-pdf` with attestation signature shortened. Phase-1 reference verifier emits `attestation_insufficient` (existing Core §19.1 kind, reused per ADR 0007 §"Verifier obligations" step 3). Generator: `_generator/gen_tamper_021_023_025_026.py`."""
 
 [coverage]
-tr_core = [
-    "TR-CORE-018",
-    "TR-CORE-030",
-    "TR-CORE-035",
-    "TR-CORE-146",
-]
+tr_core = ["TR-CORE-018", "TR-CORE-030", "TR-CORE-035", "TR-CORE-146"]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "attestation_insufficient"
-failing_event_id = "30789c39aac1c534b2b437e85f9efcd53dc0d48d6177ce726a7e4cce176a98d3"
+tamper_kind          = "attestation_insufficient"
+failing_event_id     = "72876d6cd7fe791b2a16941495fe6b39e4296f50ae27c6ab51721daab8518eb6"
 
 [derivation]
 document = "derivation.md"

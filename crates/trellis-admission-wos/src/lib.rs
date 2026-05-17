@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use stack_common_error::StackError;
 use trellis_server_ports::{
     AdmissionEvent, AdmittedEvent, BudgetReviewRecord, DirectSubmitPolicy, EventAdmissionPolicy,
-    EventFamilyId, EventTypeSpec, ProfileId, SchemaRef,
+    EventFamilyId, EventTypeSpec, SchemaRef,
 };
 use trellis_types::ArtifactType;
 use wos_events::{ProvenanceKind, ProvenanceRecord, WOS_CANONICAL_EVENT_LITERALS};
@@ -50,14 +50,13 @@ pub fn wos_event_family(event_type: &str) -> Option<&str> {
 /// Builds the event-type specifications a Trellis composition root may register
 /// against [`trellis_server_ports::EventTypeRegistry`] at startup.
 ///
-/// Each entry carries the full neutral metadata (`event_family`, `profile_id`,
+/// Each entry carries the full neutral metadata (`event_family`,
 /// `artifact_type`, `direct_submit`) so the registry — not a downstream string-
-/// parsing helper — is the catalog's source of truth. `profile_id` retires per
-/// ADR 0109; `artifact_type` is the substrate structural-role contract.
+/// parsing helper — is the catalog's source of truth. `artifact_type` is the
+/// substrate structural-role contract.
 /// Reviewer is non-empty so registration passes the budget gate.
 #[must_use]
 pub fn wos_event_type_specs() -> Vec<EventTypeSpec> {
-    let profile_id = ProfileId::new(integrity_verify::WOS_PROFILE_ID);
     WOS_CANONICAL_EVENT_LITERALS
         .iter()
         .map(|event_type| {
@@ -73,7 +72,6 @@ pub fn wos_event_type_specs() -> Vec<EventTypeSpec> {
                     .expect("wos family slug is non-empty by construction"),
                 schema_ref: SchemaRef::new(wos_schema_ref(event_type))
                     .expect("wos-events schema refs are URI-like by construction"),
-                profile_id,
                 artifact_type: ArtifactType::Event,
                 direct_submit: DirectSubmitPolicy::ServiceOnly,
                 budget_review: BudgetReviewRecord {
@@ -105,14 +103,12 @@ impl WosEventAdmissionPolicy {
         })?;
         let family = EventFamilyId::new(family_slice)
             .map_err(|error| StackError::internal(format!("wos family invariant: {error}")))?;
-        let schema_ref = SchemaRef::new(wos_schema_ref(event_type)).map_err(|error| {
-            StackError::internal(format!("wos schema ref invariant: {error}"))
-        })?;
+        let schema_ref = SchemaRef::new(wos_schema_ref(event_type))
+            .map_err(|error| StackError::internal(format!("wos schema ref invariant: {error}")))?;
         Ok(AdmittedEvent {
             event_type: event_type.to_string(),
             event_family: family,
             schema_ref,
-            profile_id: ProfileId::new(integrity_verify::WOS_PROFILE_ID),
             artifact_type: ArtifactType::Event,
             direct_submit: DirectSubmitPolicy::ServiceOnly,
         })
@@ -183,7 +179,7 @@ mod tests {
             admitted.schema_ref.as_str(),
             "wos-events://wos.kernel.case_created"
         );
-        assert_eq!(admitted.profile_id.get(), integrity_verify::WOS_PROFILE_ID);
+        assert_eq!(admitted.artifact_type, ArtifactType::Event);
         assert_eq!(admitted.direct_submit, DirectSubmitPolicy::ServiceOnly);
     }
 
@@ -212,7 +208,10 @@ mod tests {
 
     #[test]
     fn given_wos_literals_when_family_derived_then_namespaces_separate() {
-        assert_eq!(wos_event_family("wos.kernel.case_created"), Some("wos.kernel"));
+        assert_eq!(
+            wos_event_family("wos.kernel.case_created"),
+            Some("wos.kernel")
+        );
         assert_eq!(
             wos_event_family("wos.governance.amendment_authorized"),
             Some("wos.governance")
@@ -298,7 +297,10 @@ mod tests {
     #[test]
     fn given_wos_event_type_specs_when_registered_then_review_gate_accepts_all() {
         let specs = wos_event_type_specs();
-        assert!(!specs.is_empty(), "WOS event-type spec set must not be empty");
+        assert!(
+            !specs.is_empty(),
+            "WOS event-type spec set must not be empty"
+        );
         let mut registry = ReviewGateEventTypeRegistry::default();
         for spec in specs {
             registry

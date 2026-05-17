@@ -59,14 +59,14 @@ KEY_FILE = ROOT / "_keys" / "issuer-001.cose_key"
 SOURCE_VECTOR_DIR = ROOT / "append" / "005-prior-head-chain"
 OUT_DIR = ROOT / "tamper" / "001-signature-flip"
 
-# The source event — `append/005`'s byte-exact COSE_Sign1 artifact (724 bytes,
-# sha256 b2b3ce687fd8b618a69fd89b311d46de115725381a6044fcbb35206b0df77ffe).
+# The source event — `append/005`'s byte-exact COSE_Sign1 artifact (737 bytes,
+# sha256 a22ff7aa140f5aacc429cab158688c34823af7e0ec5b88bcac7e63a0fcf27091).
 # This vector's only byte-level delta vs 005's `expected-event.cbor` is the
 # one flipped signature byte.
 SOURCE_EVENT_FILE = SOURCE_VECTOR_DIR / "expected-event.cbor"
 SOURCE_APPEND_HEAD_FILE = SOURCE_VECTOR_DIR / "expected-append-head.cbor"
 EXPECTED_SOURCE_EVENT_SHA256 = (
-    "b2b3ce687fd8b618a69fd89b311d46de115725381a6044fcbb35206b0df77ffe"
+    "a22ff7aa140f5aacc429cab158688c34823af7e0ec5b88bcac7e63a0fcf27091"
 )
 
 # Ledger-scope and sequence values mirror 005 because the tampered event IS
@@ -167,7 +167,7 @@ def locate_signature_last_byte_offset(cose_sign1_bytes: bytes) -> tuple[int, byt
     assert isinstance(tag, cbor2.CBORTag) and tag.tag == 18, \
         "source must be a COSE_Sign1 tag-18 envelope (§7.4)"
     array = tag.value
-    assert isinstance(array, list) and len(array) == 4, \
+    assert isinstance(array, (list, tuple)) and len(array) == 4, \
         "COSE_Sign1 is a 4-array (RFC 9052 §4.2)"
     signature = array[3]
     assert isinstance(signature, bytes) and len(signature) == 64, \

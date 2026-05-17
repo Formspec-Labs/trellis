@@ -33,6 +33,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     deterministic_zipinfo,
@@ -85,11 +89,11 @@ def derive_kid(pubkey_raw: bytes) -> bytes:
     return hashlib.sha256(dcbor(SUITE_ID_PHASE_1) + pubkey_raw).digest()[:16]
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     protected = dcbor({
         COSE_LABEL_ALG: ALG_EDDSA,
         COSE_LABEL_KID: kid,
-        COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1,
+        COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
     })
     sig_structure = dcbor(["Signature1", protected, b"", payload_bytes])
     signature = Ed25519PrivateKey.from_private_bytes(seed).sign(sig_structure)
@@ -286,7 +290,7 @@ def build_custom_export(
         "extensions": None,
     }
     head_checkpoint_digest = checkpoint_digest(ledger_scope, checkpoint_payload)
-    checkpoints_cbor = dcbor([cbor2.loads(cose_sign1(seed, kid, dcbor(checkpoint_payload)))])
+    checkpoints_cbor = dcbor([cbor2.loads(cose_sign1(seed, kid, dcbor(checkpoint_payload), ARTIFACT_TYPE_CHECKPOINT))])
     inclusion_proofs_cbor = dcbor({0: {
         "leaf_index": 0,
         "tree_size": 1,
@@ -341,7 +345,7 @@ def build_custom_export(
             }
         },
     }
-    write_bytes(out_dir / "000-manifest.cbor", cose_sign1(seed, kid, dcbor(manifest_payload)))
+    write_bytes(out_dir / "000-manifest.cbor", cose_sign1(seed, kid, dcbor(manifest_payload), ARTIFACT_TYPE_MANIFEST))
     root_dir = f"trellis-export-{ledger_scope.decode('utf-8')}-1-{leaf_hash.hex()[:8]}"
     members = [
         "000-manifest.cbor",
@@ -422,7 +426,7 @@ def build_export(out_dir: Path, *, graph_variant: str) -> tuple[str, bytes, byte
         "extensions": None,
     }
     head_checkpoint_digest = checkpoint_digest(ledger_scope, checkpoint_payload)
-    checkpoint_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload))
+    checkpoint_bytes = cose_sign1(seed, kid, dcbor(checkpoint_payload), ARTIFACT_TYPE_CHECKPOINT)
     checkpoints_cbor = dcbor([cbor2.loads(checkpoint_bytes)])
 
     inclusion_proofs_cbor = dcbor({0: {
@@ -549,7 +553,7 @@ def build_export(out_dir: Path, *, graph_variant: str) -> tuple[str, bytes, byte
             }
         },
     }
-    manifest_bytes = cose_sign1(seed, kid, dcbor(manifest_payload))
+    manifest_bytes = cose_sign1(seed, kid, dcbor(manifest_payload), ARTIFACT_TYPE_MANIFEST)
     write_bytes(out_dir / "000-manifest.cbor", manifest_bytes)
 
     root_dir = f"trellis-export-{ledger_scope.decode('utf-8')}-1-{leaf_hash.hex()[:8]}"

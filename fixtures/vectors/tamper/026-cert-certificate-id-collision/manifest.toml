@@ -1,30 +1,23 @@
-id = "tamper/026-cert-certificate-id-collision"
-op = "tamper"
-status = "active"
-description = "ADR 0007 §\"Field semantics\" `certificate_id` clause: two events on the same chain share `certificate_id = \"urn:trellis:certificate:test:028\"` but their canonical certificate payloads disagree (event 1 mutates `presentation_artifact.content_hash`). `finalize_certificates_of_completion` flips integrity via `certificate_id_collision`. Generator: `_generator/gen_tamper_021_023_025_026.py`."
+id          = "tamper/026-cert-certificate-id-collision"
+op          = "tamper"
+status      = "active"
+description = """ADR 0007 §"Field semantics" `certificate_id` clause: two events on the same chain share `certificate_id = "urn:trellis:certificate:test:028"` but their canonical certificate payloads disagree (event 1 mutates `presentation_artifact.content_hash`). `finalize_certificates_of_completion` flips integrity via `certificate_id_collision`. Generator: `_generator/gen_tamper_021_023_025_026.py`."""
 
 [coverage]
-tr_core = [
-    "TR-CORE-018",
-    "TR-CORE-030",
-    "TR-CORE-035",
-    "TR-CORE-147",
-]
-tr_op = [
-    "TR-OP-131",
-]
+tr_core = ["TR-CORE-018", "TR-CORE-030", "TR-CORE-035", "TR-CORE-147"]
+tr_op = ["TR-OP-131"]
 
 [inputs]
-ledger = "input-tampered-ledger.cbor"
-tampered_event = "input-tampered-event.cbor"
+ledger               = "input-tampered-ledger.cbor"
+tampered_event       = "input-tampered-event.cbor"
 signing_key_registry = "input-signing-key-registry.cbor"
 
 [expected.report]
-structure_verified = true
-integrity_verified = false
+structure_verified   = true
+integrity_verified   = false
 readability_verified = true
-tamper_kind = "certificate_id_collision"
-failing_event_id = "a8e0bd7ab927c61a0ee144702d540c96fbafc6a0eae264ec932610881f737f06"
+tamper_kind          = "certificate_id_collision"
+failing_event_id     = "9be3432a1d085b4055b53fdebc6fa4fe0fc8536f793eda57afe1ef17dcbc03cd"
 
 [derivation]
 document = "derivation.md"

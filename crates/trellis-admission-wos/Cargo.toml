@@ -7,7 +7,6 @@ license.workspace = true
 
 [dependencies]
 async-trait = "0.1"
-integrity-verify = { path = "../../../integrity-stack/crates/integrity-verify" }
 serde_json = "1"
 stack-common-error = { path = "../../../stack-common/crates/stack-common-error" }
 trellis-server-ports = { path = "../trellis-server-ports" }

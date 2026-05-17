@@ -23,4 +23,4 @@ equal `expected-export.zip` (Core §18.1 deterministic ZIP).
 Sidecar member at `interop-sidecars/c2pa-manifest/cert-wave25-001.c2pa`
 is included in the member list.
 
-`zip_sha256 = 4c68ef88c2b13df36c326fdab5e829a2a1aaf46622b933934661bb4ba5e6f0f6`
+`zip_sha256 = 7bbaa3a443c6f86213ada6fcd4bcf87d9cc3690a46511bf0a651205a70fdd2c9`

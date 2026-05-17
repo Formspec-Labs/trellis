@@ -24,6 +24,10 @@ from _lib.byte_utils import (  # noqa: E402
     COSE_LABEL_ALG,
     COSE_LABEL_KID,
     COSE_LABEL_SUITE_ID,
+    ARTIFACT_TYPE_CHECKPOINT,
+    ARTIFACT_TYPE_EVENT,
+    ARTIFACT_TYPE_MANIFEST,
+    COSE_LABEL_ARTIFACT_TYPE,
     SUITE_ID_PHASE_1,
     dcbor,
     deterministic_zipinfo,
@@ -63,18 +67,18 @@ def derive_kid(suite_id: int, pubkey_raw: bytes) -> bytes:
     return hashlib.sha256(dcbor(suite_id) + pubkey_raw).digest()[:16]
 
 
-def protected_header(kid: bytes) -> bytes:
+def protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     return dcbor(
         {
             COSE_LABEL_ALG: ALG_EDDSA,
             COSE_LABEL_KID: kid,
-            COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1,
+            COSE_LABEL_SUITE_ID: SUITE_ID_PHASE_1, COSE_LABEL_ARTIFACT_TYPE: artifact_type,
         }
     )
 
 
-def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes) -> bytes:
-    protected = protected_header(kid)
+def cose_sign1(seed: bytes, kid: bytes, payload_bytes: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
+    protected = protected_header(kid, artifact_type)
     sig_structure = dcbor(["Signature1", protected, b"", payload_bytes])
     signature = Ed25519PrivateKey.from_private_bytes(seed).sign(sig_structure)
     return dcbor(cbor2.CBORTag(CBOR_TAG_COSE_SIGN1, [protected, {}, payload_bytes, signature]))
@@ -218,7 +222,7 @@ def build_export_005() -> None:
         "extensions": None,
     }
     head_checkpoint_digest = checkpoint_digest(scope, checkpoint_payload)
-    members_data["040-checkpoints.cbor"] = dcbor([cbor2.loads(cose_sign1(seed, kid, dcbor(checkpoint_payload)))])
+    members_data["040-checkpoints.cbor"] = dcbor([cbor2.loads(cose_sign1(seed, kid, dcbor(checkpoint_payload), ARTIFACT_TYPE_CHECKPOINT))])
 
     domain_registry = build_domain_registry()
     domain_registry_digest = sha256(domain_registry)
@@ -291,7 +295,7 @@ def build_export_005() -> None:
             }
         },
     }
-    members_data["000-manifest.cbor"] = cose_sign1(seed, kid, dcbor(manifest_payload))
+    members_data["000-manifest.cbor"] = cose_sign1(seed, kid, dcbor(manifest_payload), ARTIFACT_TYPE_MANIFEST)
 
     for member, member_bytes in members_data.items():
         write_bytes(OUT_EXPORT_005 / member, member_bytes)

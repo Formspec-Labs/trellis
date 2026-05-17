@@ -6,8 +6,8 @@ use std::fs;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use axum::http::{HeaderMap, StatusCode};
 use axum::http::header::AUTHORIZATION;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use stack_common_auth::{JwtConfig, JwtVerifier};
 use stack_common_error::{ErrorCode, StackError};
@@ -30,9 +30,9 @@ use trellis_server_ports::{
 };
 
 use crate::admission::{AllowAllScopeAuthorizer, ScopedAllowlistScopeAuthorizer};
-use crate::composition::{EventTypeCatalog, default_admission_policy};
 use crate::append::{AppendRunner, DefaultAppendRunner};
 use crate::artifacts::{BundleIndex, InMemoryArtifactStore, ScopeLocks};
+use crate::composition::{EventTypeCatalog, default_admission_policy};
 use crate::event_repository::{EventRepository, InMemoryEventRepository, PostgresEventRepository};
 use crate::scope_startup::TrellisScopeAuthorizerStartupInputs;
 use crate::{ServerSigningKey, TenantHeaderMode, TrellisClaims};
@@ -167,7 +167,10 @@ impl TrellisServerState {
         crate::append::AppendCoordinator::new(self)
     }
 
-    pub(crate) fn authenticate(&self, headers: &HeaderMap) -> Result<Option<TrellisClaims>, StackError> {
+    pub(crate) fn authenticate(
+        &self,
+        headers: &HeaderMap,
+    ) -> Result<Option<TrellisClaims>, StackError> {
         let Some(verifier) = &self.jwt_verifier else {
             return Ok(None);
         };

@@ -171,17 +171,17 @@ mod tests {
                 "schema EventType enum must only list admitted server literals"
             );
         }
-        let schema_profile = &schema["$defs"]["VerificationReceipt"]["properties"]["profileId"];
-        let openapi_profile =
-            &openapi["components"]["schemas"]["VerificationReceipt"]["properties"]["profileId"];
+        let schema_artifact = &schema["$defs"]["VerificationReceipt"]["properties"]["artifactType"];
+        let openapi_artifact =
+            &openapi["components"]["schemas"]["VerificationReceipt"]["properties"]["artifactType"];
         assert_eq!(
-            openapi_profile["type"], "integer",
-            "OpenAPI VerificationReceipt.profileId must be integer"
+            openapi_artifact["type"], "string",
+            "OpenAPI VerificationReceipt.artifactType must be string"
         );
         assert_eq!(
-            schema_profile["enum"],
-            json!([1, 2]),
-            "JSON schema must enumerate WOS profile 1 and Formspec profile 2"
+            schema_artifact["enum"],
+            json!(["event", "checkpoint", "manifest"]),
+            "JSON schema must enumerate closed artifactType values"
         );
         let schema_verified = &schema["$defs"]["VerificationReceipt"]["properties"]["verified"];
         assert_eq!(
@@ -216,11 +216,11 @@ mod tests {
                 .get("VerificationReceipt")
                 .and_then(|schema| schema["properties"].as_object())
                 .is_some_and(|properties| {
-                    ["verified", "profileId", "eventType"]
+                    ["verified", "artifactType", "eventType"]
                         .iter()
                         .all(|property| properties.contains_key(*property))
                 }),
-            "VerificationReceipt schema must expose verified/profileId/eventType"
+            "VerificationReceipt schema must expose verified/artifactType/eventType"
         );
     }
 }
