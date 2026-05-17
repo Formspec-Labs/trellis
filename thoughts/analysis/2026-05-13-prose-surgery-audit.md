@@ -7,7 +7,7 @@ Scope: `specs/trellis-core.md` sections 5, 7, 9.1, and 18.
 | Section | Rule family | Classification | Substrate authority | Trellis-owned remainder |
 |---|---|---|---|---|
 | §5 | Deterministic CBOR encoding profile | Keep as composition prose | `integrity-cbor` owns primitive CBOR encoding helpers and deterministic value decoding | Trellis still names which artifacts are dCBOR and which fixture members must byte-match |
-| §7 | COSE_Sign1 protected headers and signature structure | Keep only Trellis profile pins | `integrity-cose` owns COSE_Sign1 parsing, protected-header construction, Sig_structure, and Ed25519 verification | Trellis owns `suite_id = 1`, `artifact_type = -65538`, `profile_id = -65539`, artifact-type names, and migration/resolution discipline |
+| §7 | COSE_Sign1 protected headers and signature structure | Keep only Trellis profile pins | `integrity-cose` owns COSE_Sign1 parsing, protected-header construction, Sig_structure, and Ed25519 verification | Trellis owns `suite_id = 1`, `artifact_type = -65538`, retired label `-65539`, artifact-type names, and migration/resolution discipline |
 | §9.1 | Length-prefixed domain separation | Keep skeleton plus tag namespace | `integrity-canonical` owns length-prefixed digest framing and SHA helpers | Trellis owns the `trellis-*` domain tags and which components enter each preimage |
 | §18 | Deterministic ZIP mechanics | Keep archive composition | `integrity-bundle` / `trellis-export` own deterministic ZIP byte mechanics | Trellis owns member names, lexicographic member order, manifest digest bindings, optional catalog semantics, and verifier obligations |
 

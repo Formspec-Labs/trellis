@@ -1,19 +1,19 @@
-# ADR 0011 — `profile_id` Value Sub-Registry
+# ADR 0011 — Retired Dispatch-Label Value Sub-Registry
 
-**Status:** Accepted 2026-05-13
+**Status:** Superseded 2026-05-16 by ADR 0109
 
 ## Context
 
-Trellis Core already assigns the COSE protected-header label `-65539` to `profile_id`, but the spec did not yet define the value registry carried under that label. UWU-1 in `formspec-stack/thoughts/archive/plans/2026-05-12-integrity-stack-case-boundary-refactor.md` Phase 9 allocates the Formspec authored-signature profile value, and the verifier dispatcher needs a canonical registry home.
+Trellis Core had assigned COSE protected-header label `-65539` to integer dispatch, but the spec did not yet define the value registry carried under that label. UWU-1 in `formspec-stack/thoughts/archive/plans/2026-05-12-integrity-stack-case-boundary-refactor.md` Phase 9 allocated the Formspec authored-signature dispatch value, and the verifier dispatcher needed a canonical registry home.
 
 ## Decision
 
-1. Trellis Core §26.2.1 is the canonical `profile_id` value sub-registry.
+1. Trellis Core §26.2.1 was the canonical value sub-registry for retired label `-65539`.
 2. Values are sequential `u64` allocations starting at 1.
 3. Allocated values at this decision:
    - `1` = WOS workflow event.
    - `2` = Formspec authored signature.
-4. The stack-root `thoughts/registries/profile-ids.md` file is a coordination mirror only.
+4. The stack-root dispatch-value registry mirror is historical only.
 
 ## Consequences
 
