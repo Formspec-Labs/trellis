@@ -264,7 +264,7 @@ def check_defs(schema: dict, server_source: str, client_source: str, errors: lis
 
     # ADR 0109: admission returns substrate artifact type, not an integer
     # dispatch field. Assert the new contract instead.
-    if "artifact_type: ArtifactType" not in server_source and "AdmittedEvent" not in server_source:
+    if "artifact_type: ArtifactType" not in server_source or "AdmittedEvent" not in server_source:
         errors.append(
             "trellis-server must consume AdmittedEvent.artifact_type (ADR 0109); "
             "previous integer dispatch was retired"

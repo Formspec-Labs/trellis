@@ -265,7 +265,9 @@ mod tests {
 
         assert_eq!(
             report.structure_verified,
-            bool_field(root, expected_report, "structure_verified")
+            bool_field(root, expected_report, "structure_verified"),
+            "{}: structure_verified mismatch: {report:?}",
+            fixture_label(root)
         );
         if report.integrity_verified && !bool_field(root, expected_report, "integrity_verified") {
             let wos_report = trellis_verify_wos::verify_export_zip(&export_zip);

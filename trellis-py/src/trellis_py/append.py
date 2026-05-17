@@ -16,10 +16,12 @@ from trellis_py.codec import (
     sig_structure_bytes,
 )
 from trellis_py.constants import (
+    ARTIFACT_TYPE_EVENT,
     AUTHORED_LEDGER_EVENT_MAP_PREFIX,
     AUTHOR_EVENT_DOMAIN,
     CANONICAL_LEDGER_EVENT_MAP_PREFIX,
     COSE_LABEL_ALG,
+    COSE_LABEL_ARTIFACT_TYPE,
     COSE_LABEL_KID,
     EVENT_DOMAIN,
     SUITE_ID_PHASE_1,
@@ -80,15 +82,17 @@ def _derive_kid(suite_id: int, public_key: bytes) -> bytes:
     return h.digest()[:16]
 
 
-def protected_header_bytes(kid: bytes) -> bytes:
+def protected_header_bytes(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> bytes:
     b = bytearray()
-    b.append(0xA3)
+    b.append(0xA4)
     b.extend(encode_uint(COSE_LABEL_ALG))
     b.extend(encode_cbor_negative_int(7))  # -8 EdDSA
     b.extend(encode_uint(COSE_LABEL_KID))
     b.extend(encode_bstr(kid))
     b.extend(encode_cose_suite_id_label())
     b.extend(encode_uint(SUITE_ID_PHASE_1))
+    b.extend(encode_cbor_negative_int(-1 - COSE_LABEL_ARTIFACT_TYPE))
+    b.extend(encode_tstr(artifact_type))
     return bytes(b)
 
 

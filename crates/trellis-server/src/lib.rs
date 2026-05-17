@@ -8,7 +8,7 @@
 //!
 //! Axum routing is exposed via [`router`]; durable bootstrap and HTTP replay state via
 //! [`TrellisServerState`] / [`state_from_env`] (implemented in `src/http.rs` and `src/state.rs`).
-//! This file remains a large composition root (profile dispatch, bundle publication, CBOR/registry
+//! This file remains a large composition root (event admission dispatch, bundle publication, CBOR/registry
 //! helpers, and related tests), not a thin re-export-only façade.
 //!
 //! **HTTP replay idempotency** is enforced only through

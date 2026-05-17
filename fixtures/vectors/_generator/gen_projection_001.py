@@ -226,7 +226,7 @@ def build_canonical_preimage(event_payload: dict) -> dict:
 
 
 def build_protected_header(kid: bytes, artifact_type: str = ARTIFACT_TYPE_EVENT) -> dict:
-    # §7.4 protected header (alg, kid, suite_id). artifact_type omitted.
+    # §7.4 protected header (alg, kid, suite_id, artifact_type).
     return {
         COSE_LABEL_ALG:      ALG_EDDSA,
         COSE_LABEL_KID:      kid,

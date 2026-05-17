@@ -100,6 +100,31 @@ class TestCheckHttpApiSchema(unittest.TestCase):
             msg=errors,
         )
 
+    def test_given_server_only_missing_artifact_type_field_when_check_defs_then_error_emitted(
+        self,
+    ) -> None:
+        server_source = self.server_source.replace(
+            "artifact_type: ArtifactType",
+            "artifact_type: String",
+        )
+        errors: list[str] = []
+        self.module.check_defs(self.schema, server_source, self.client_source, errors)
+        self.assertTrue(
+            any("AdmittedEvent.artifact_type" in error for error in errors),
+            msg=errors,
+        )
+
+    def test_given_server_only_missing_admitted_event_marker_when_check_defs_then_error_emitted(
+        self,
+    ) -> None:
+        server_source = self.server_source.replace("AdmittedEvent", "RetiredEnvelope")
+        errors: list[str] = []
+        self.module.check_defs(self.schema, server_source, self.client_source, errors)
+        self.assertTrue(
+            any("AdmittedEvent.artifact_type" in error for error in errors),
+            msg=errors,
+        )
+
     def test_given_openapi_operation_id_drift_when_check_openapi_operations_then_error_emitted(
         self,
     ) -> None:
