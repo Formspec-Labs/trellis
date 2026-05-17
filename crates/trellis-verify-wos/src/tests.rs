@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 
 use ciborium::Value;
 use integrity_verify::trellis::{
-    DomainEvent, DomainExport, RecordValidator, Severity, TrellisTimestamp,
+    DomainEvent, DomainExport, RecordValidator, RelyingPartyResult, Severity, TrellisTimestamp,
+    VerdictState,
 };
 
 use crate::event_types::{
@@ -262,6 +263,34 @@ fn given_tampered_signature_catalog_export_when_verify_export_zip_then_stranger_
         !stranger_passed,
         "tampered signature catalog must fail stranger verification: {report:#?}"
     );
+}
+
+/// Given a valid substrate export with a projection mismatch, when layered
+/// verification runs, then substrate integrity passes while the relying-party
+/// verdict fails projection integrity.
+#[test]
+fn given_signed_acts_projection_mismatch_when_layered_report_then_projection_blocks_verdict() {
+    let zip_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
+        "../../fixtures/vectors/verify/019-export-006-signed-acts-projection-mismatch/input-export.zip",
+    );
+    let bytes = std::fs::read(&zip_path).unwrap_or_else(|error| {
+        panic!(
+            "fixture input-export.zip must exist at {}: {error}",
+            zip_path.display()
+        );
+    });
+    let report = crate::verify_export_zip(&bytes);
+    let layered = report.layered_report();
+
+    assert!(layered.substrate.structure_verified, "{layered:#?}");
+    assert!(layered.substrate.integrity_verified, "{layered:#?}");
+    assert_eq!(layered.verdict.cryptographic_integrity, VerdictState::Pass);
+    assert_eq!(layered.verdict.projection_integrity, VerdictState::Fail);
+    assert_eq!(
+        layered.verdict.relying_party_result,
+        RelyingPartyResult::Invalid
+    );
+    assert_eq!(layered.verdict.blocking_reasons, ["projection_mismatch"]);
 }
 
 #[test]

@@ -47,15 +47,124 @@ class WosFinding:
 
 
 @dataclass
+class RelyingPartyVerdict:
+    cryptographic_integrity: str
+    projection_integrity: str
+    domain_admissibility: str
+    relying_party_result: str
+    blocking_reasons: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DomainReport:
+    findings: list[WosFinding] = field(default_factory=list)
+
+
+@dataclass
+class LayeredVerificationReport:
+    verdict: RelyingPartyVerdict
+    substrate: core.VerificationReport
+    domain: DomainReport
+
+
+@dataclass
 class WosVerificationReport:
     trellis: core.VerificationReport
     wos_findings: list[WosFinding] = field(default_factory=list)
 
     @property
+    def substrate(self) -> core.VerificationReport:
+        return self.trellis
+
+    @property
+    def domain(self) -> DomainReport:
+        return DomainReport(list(self.wos_findings))
+
+    @property
+    def verdict(self) -> RelyingPartyVerdict:
+        return _verdict_from_parts(self.trellis, self.wos_findings)
+
+    @property
+    def layered_report(self) -> LayeredVerificationReport:
+        return LayeredVerificationReport(self.verdict, self.trellis, self.domain)
+
+    @property
     def integrity_verified(self) -> bool:
-        return self.trellis.integrity_verified and not any(
-            finding.severity == "failure" for finding in self.wos_findings
+        return self.verdict.relying_party_result == "valid"
+
+
+def _verdict_from_parts(
+    substrate: core.VerificationReport, findings: list[WosFinding]
+) -> RelyingPartyVerdict:
+    cryptographic_integrity = (
+        "pass"
+        if substrate.structure_verified and substrate.integrity_verified
+        else "fail"
+    )
+    substrate_ok = cryptographic_integrity == "pass"
+    projection_integrity = (
+        "indeterminate"
+        if not substrate_ok
+        else "fail"
+        if any(
+            finding.severity == "failure" and _is_projection_finding(finding)
+            for finding in findings
         )
+        else "pass"
+    )
+    domain_admissibility = (
+        "indeterminate"
+        if not substrate_ok
+        else "fail"
+        if any(
+            finding.severity == "failure" and not _is_projection_finding(finding)
+            for finding in findings
+        )
+        else "pass"
+    )
+    blocking_reasons: list[str] = []
+    if cryptographic_integrity == "fail":
+        blocking_reasons.append("substrate_integrity")
+    if projection_integrity == "fail":
+        reason = (
+            "projection_mismatch"
+            if any(
+                finding.kind == "signed_acts_projection_mismatch"
+                for finding in findings
+            )
+            else "projection_integrity"
+        )
+        blocking_reasons.append(reason)
+    if domain_admissibility == "fail":
+        blocking_reasons.append("domain_admissibility")
+    if (
+        not blocking_reasons
+        and cryptographic_integrity == "pass"
+        and projection_integrity == "pass"
+        and domain_admissibility == "pass"
+    ):
+        relying_party_result = "valid"
+    elif blocking_reasons:
+        relying_party_result = "invalid"
+    else:
+        relying_party_result = "indeterminate"
+    return RelyingPartyVerdict(
+        cryptographic_integrity,
+        projection_integrity,
+        domain_admissibility,
+        relying_party_result,
+        blocking_reasons,
+    )
+
+
+def _is_projection_finding(finding: WosFinding) -> bool:
+    return finding.kind in {
+        "missing_signed_acts_catalog",
+        "signed_acts_catalog_digest_mismatch",
+        "signed_acts_catalog_invalid",
+        "signed_acts_catalog_unbound",
+        "signed_acts_projection_mismatch",
+    }
 
 
 def verify_export_zip(export_zip: bytes) -> WosVerificationReport:

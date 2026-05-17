@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from trellis_py import verify as core
 from trellis_py import verify_wos
+
+TRELLIS_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_map_lookup_str_alias_returns_preferred_when_string() -> None:
@@ -67,6 +71,24 @@ def test_intake_export_extension_parse_error_becomes_wos_finding() -> None:
     assert findings[0].kind == "intake_handoff_catalog_invalid"
     assert findings[0].severity == "failure"
     assert "intake export extension is invalid" in findings[0].detail
+
+
+def test_signed_acts_projection_mismatch_blocks_relying_party_verdict() -> None:
+    export_zip = (
+        TRELLIS_ROOT
+        / "fixtures/vectors/verify/019-export-006-signed-acts-projection-mismatch/input-export.zip"
+    ).read_bytes()
+
+    report = verify_wos.verify_export_zip(export_zip)
+
+    assert report.substrate.structure_verified is True
+    assert report.substrate.integrity_verified is True
+    assert report.verdict.cryptographic_integrity == "pass"
+    assert report.verdict.projection_integrity == "fail"
+    assert report.verdict.domain_admissibility == "pass"
+    assert report.verdict.relying_party_result == "invalid"
+    assert report.verdict.blocking_reasons == ["projection_mismatch"]
+    assert report.integrity_verified is False
 
 
 def test_clock_event_type_constants_match_f13_literals() -> None:

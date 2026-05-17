@@ -2184,6 +2184,15 @@ Implementations record attachment-manifest failures (the optional ADR 0072 step 
 
 The verifier's output is a structured report enumerating every integrity observation. The overall convenience boolean MAY be computed as all three booleans true, but implementations MUST expose the three booleans independently. A package that omits ciphertext bytes can still be structurally verified, but it cannot claim payload integrity or readability were verified offline for the omitted payloads.
 
+Domain validators MAY wrap this Core report in a layered report with a
+domain-specific findings surface and a relying-party verdict. That composed
+surface MUST keep the Core report available unchanged as the substrate report.
+The relying-party verdict is not a new source of authority; it is a projection
+over substrate booleans plus domain findings for non-specialist readers. For
+example, a WOS verifier can report `cryptographic_integrity = pass` while
+`projection_integrity = fail` when `066-signed-acts.cbor` is manifest-bound but
+does not byte-equal deterministic re-derivation.
+
 ```cddl
 VerificationReport = {
   structure_verified:         bool,

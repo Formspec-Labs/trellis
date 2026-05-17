@@ -27,7 +27,10 @@ mod validator;
 mod tests;
 
 pub use certificate_resolver::WosFormspecResolver;
-pub use findings::{WosFinding, WosVerificationReport};
+pub use findings::{
+    WosDomainReport, WosFinding, WosLayeredVerificationReport, WosRelyingPartyVerdict,
+    WosVerificationReport,
+};
 pub use validator::WosRecordValidator;
 
 /// Verifies a Trellis export ZIP using structural Trellis checks plus WOS-domain validation.

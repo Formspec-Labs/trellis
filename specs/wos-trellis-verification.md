@@ -28,6 +28,20 @@ WOS validation MUST NOT depend on live WOS runtime state, task queues, service
 databases, caches, or mutable APIs. It MAY use WOS schemas and record parsers
 compiled into the verifier.
 
+The composed WOS report has three surfaces:
+
+- `substrate`: the unchanged Trellis Core `VerificationReport`.
+- `domain`: WOS findings and domain projections derived only from Core-derived
+  evidence.
+- `verdict`: a relying-party summary with `cryptographic_integrity`,
+  `projection_integrity`, `domain_admissibility`, `relying_party_result`, and
+  `blocking_reasons`.
+
+`cryptographic_integrity` is derived only from the substrate report.
+`projection_integrity` fails for SignedAct projection/catalog failures.
+`domain_admissibility` fails for non-projection WOS failures. The final
+`relying_party_result` is `valid` only when all blocking tiers pass.
+
 ## 2. Event Types
 
 The WOS validator owns the following event-type literals:
@@ -50,7 +64,7 @@ These literals MUST NOT be required by a Trellis Core verifier.
 
 | ID | Requirement |
 |---|---|
-| WOS-TV-001 | The WOS validator MUST report its findings separately from the Core `VerificationReport` or mark composed findings so callers can distinguish WOS-domain failures from Core integrity failures. |
+| WOS-TV-001 | The WOS validator MUST report its findings separately from the Core `VerificationReport` and MUST expose a relying-party verdict that distinguishes substrate cryptographic integrity, projection integrity, and domain admissibility. |
 | WOS-TV-002 | After a chain carries `wos.governance.determination_rescinded`, the WOS validator MUST report `rescission_terminality_violation` for any later same-chain `wos.governance.determination*` event unless an intervening `wos.governance.reinstated` event reopens the chain. |
 | WOS-TV-003 | When a `wos.governance.clock_resolved` event carries a `clockResolved` record with `resolution = "paused"`, the next resumed `wos.governance.clock_started` segment for the same `clockId` MUST carry the same `calendarRef` as the paused segment. A mismatch is `clock_calendar_mismatch`. |
 | WOS-TV-004 | If `trellis.export.signature-affirmations.v1` is present, `062-signature-affirmations.cbor` MUST be present and its SHA-256 digest MUST equal `signature_catalog_digest`. |
