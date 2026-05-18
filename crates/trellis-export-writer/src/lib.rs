@@ -54,6 +54,16 @@ pub const REGISTRY_DIR: &str = "050-registries";
 /// Trellis binds the bytes in the export manifest, but WOS/Formspec profile
 /// validators own the projection semantics and deterministic re-derivation.
 pub const SIGNED_ACTS_MEMBER: &str = "066-signed-acts.cbor";
+/// Composition-owned SignedAct manifest digest catalog.
+///
+/// Sibling of [`SIGNED_ACTS_MEMBER`]. Carries the byte-deterministic
+/// `(canonical_event_hash, event_type)` tuple list for sealed signed-acts
+/// source events. Re-derivable from sealed source events alone, so it acts as
+/// the verifier's substrate-side anchor for the `066-signed-acts.cbor`
+/// projection. Trellis binds the bytes via the
+/// `trellis.export.signed-acts.manifest.v1` extension; consumer profile
+/// validators re-derive and compare.
+pub const SIGNED_ACTS_MANIFEST_MEMBER: &str = "068-signed-acts-manifest.cbor";
 /// Composition-owned effective policy closure.
 ///
 /// Trellis binds the bytes in the export manifest. WOS/Formspec verifiers own
@@ -127,6 +137,19 @@ pub struct RegistrySnapshot {
 /// Caller-supplied verifier-facing SignedAct projection catalog.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedActsCatalogMember {
+    pub bytes: Vec<u8>,
+    pub derivation_rule: String,
+}
+
+/// Caller-supplied SignedAct manifest digest catalog (068 member).
+///
+/// Carries the canonical-CBOR encoding of the sorted
+/// `(canonical_event_hash, event_type)` tuple list derived from the sealed
+/// source events. Trellis binds the bytes; consumer profile validators
+/// re-derive and compare byte-for-byte. The derivation rule string identifies
+/// the algorithm (e.g. `signed-acts-manifest-v1`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignedActsManifestMember {
     pub bytes: Vec<u8>,
     pub derivation_rule: String,
 }
@@ -245,6 +268,13 @@ pub struct ExportWriterInput {
     /// digest. WOS/Formspec verifiers re-derive the catalog from layered records
     /// and decide whether the projection is semantically usable.
     pub signed_acts_catalog: Option<SignedActsCatalogMember>,
+    /// Optional composition-owned `068-signed-acts-manifest.cbor` digest catalog.
+    ///
+    /// Emitted alongside [`Self::signed_acts_catalog`]; carries the sealed
+    /// `(canonical_event_hash, event_type)` tuple list. The writer binds the
+    /// member digest via `trellis.export.signed-acts.manifest.v1`. WOS/Formspec
+    /// verifiers re-derive from sealed source events and compare byte-for-byte.
+    pub signed_acts_manifest: Option<SignedActsManifestMember>,
     /// Optional composition-owned `067-policy-closure.cbor` rule-evidence
     /// snapshot.
     ///
@@ -426,6 +456,12 @@ pub fn write_export(input: ExportWriterInput) -> Result<ExportPackage, StackErro
             catalog.bytes.clone(),
         ));
     }
+    if let Some(manifest) = &input.signed_acts_manifest {
+        bundle.add_entry(BundleEntry::new(
+            format!("{root_dir}/{SIGNED_ACTS_MANIFEST_MEMBER}"),
+            manifest.bytes.clone(),
+        ));
+    }
     if let Some(closure) = &input.policy_closure {
         bundle.add_entry(BundleEntry::new(
             format!("{root_dir}/{POLICY_CLOSURE_MEMBER}"),
@@ -471,6 +507,8 @@ const WITNESS_REGISTRY_MANIFEST_EXTENSION: &str = "trellis.export.witness-key-re
 const SEAL_FENCE_MANIFEST_EXTENSION: &str = "trellis.export.seal-fence.v1";
 /// Composition-owned manifest extension binding `066-signed-acts.cbor`.
 const SIGNED_ACTS_MANIFEST_EXTENSION: &str = "trellis.export.signed-acts.v1";
+/// Composition-owned manifest extension binding `068-signed-acts-manifest.cbor`.
+const SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION: &str = "trellis.export.signed-acts.manifest.v1";
 /// Composition-owned manifest extension binding `067-policy-closure.cbor`.
 const POLICY_CLOSURE_MANIFEST_EXTENSION: &str = "trellis.export.policy-closure.v1";
 
@@ -519,10 +557,18 @@ fn manifest_extensions_value(
             &catalog.derivation_rule,
         ),
     }?;
-    match &input.policy_closure {
-        None => Ok(with_signed_acts),
-        Some(closure) => merge_policy_closure_manifest_extension(
+    let with_signed_acts_manifest = match &input.signed_acts_manifest {
+        None => with_signed_acts,
+        Some(manifest) => merge_signed_acts_manifest_member_extension(
             Some(&with_signed_acts),
+            sha256_bytes(&manifest.bytes),
+            &manifest.derivation_rule,
+        )?,
+    };
+    match &input.policy_closure {
+        None => Ok(with_signed_acts_manifest),
+        Some(closure) => merge_policy_closure_manifest_extension(
+            Some(&with_signed_acts_manifest),
             sha256_bytes(&closure.bytes),
             &closure.closure_version,
         ),
@@ -629,6 +675,35 @@ fn merge_signed_acts_manifest_extension(
     canonical_map(pairs)
 }
 
+fn merge_signed_acts_manifest_member_extension(
+    base_extensions: Option<&Value>,
+    digest: [u8; 32],
+    derivation_rule: &str,
+) -> Result<Value, StackError> {
+    let mut pairs: Vec<(Value, Value)> = Vec::new();
+    if let Some(Value::Map(entries)) = base_extensions {
+        for (key, value) in entries {
+            if key.as_text() == Some(SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION) {
+                continue;
+            }
+            pairs.push((key.clone(), value.clone()));
+        }
+    }
+    let manifest_payload = text_map(vec![
+        (
+            "catalog_ref",
+            Value::Text(SIGNED_ACTS_MANIFEST_MEMBER.to_string()),
+        ),
+        ("derivation_rule", Value::Text(derivation_rule.to_string())),
+        ("manifest_digest", Value::Bytes(digest.to_vec())),
+    ])?;
+    pairs.push((
+        Value::Text(SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION.to_string()),
+        manifest_payload,
+    ));
+    canonical_map(pairs)
+}
+
 fn merge_policy_closure_manifest_extension(
     base_extensions: Option<&Value>,
     digest: [u8; 32],
@@ -731,6 +806,18 @@ fn validate_top_level_input(input: &ExportWriterInput) -> Result<(), StackError>
             ));
         }
     }
+    if input.signed_acts_manifest.is_none() {
+        if let Some(Value::Map(entries)) = &input.extensions
+            && entries
+                .iter()
+                .any(|(key, _)| key.as_text() == Some(SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION))
+        {
+            return Err(StackError::bad_request(
+                "manifest extensions include trellis.export.signed-acts.manifest.v1 \
+                 but signed_acts_manifest was not provided",
+            ));
+        }
+    }
     if input.policy_closure.is_none() {
         if let Some(Value::Map(entries)) = &input.extensions
             && entries
@@ -755,6 +842,21 @@ fn validate_top_level_input(input: &ExportWriterInput) -> Result<(), StackError>
         if catalog.derivation_rule.trim().is_empty() {
             return Err(StackError::bad_request(
                 "signed_acts_catalog derivation_rule must not be empty",
+            ));
+        }
+    }
+    if let Some(manifest) = &input.signed_acts_manifest {
+        if manifest.bytes.is_empty() {
+            return Err(StackError::bad_request(
+                "signed_acts_manifest bytes must not be empty",
+            ));
+        }
+        decode_cbor_value(&manifest.bytes).map_err(|error| {
+            StackError::bad_request(format!("signed_acts_manifest is invalid CBOR: {error}"))
+        })?;
+        if manifest.derivation_rule.trim().is_empty() {
+            return Err(StackError::bad_request(
+                "signed_acts_manifest derivation_rule must not be empty",
             ));
         }
     }
@@ -1652,6 +1754,7 @@ mod tests {
             seal_fence: None,
             witness_key_registry: None,
             signed_acts_catalog: None,
+            signed_acts_manifest: None,
             policy_closure: None,
         };
         let error = write_export(input).expect_err("empty export must reject");
@@ -2015,6 +2118,90 @@ mod tests {
                 .find(|(key, _)| key.as_text() == Some("derivation_rule"))
                 .and_then(|(_, value)| value.as_text()),
             Some("signed-act-projection-test-v1")
+        );
+    }
+
+    #[test]
+    fn write_export_emits_068_member_when_signed_acts_manifest_provided() {
+        let root = fixtures_root();
+        let mut input = crate::export_001_writer_input(root.as_path());
+        // Use a syntactically valid CBOR array — verifier doesn't run here, so
+        // raw bytes are sufficient to exercise the writer.
+        let manifest_bytes = vec![0x80u8]; // CBOR array(0)
+        let expected_digest = sha256_bytes(&manifest_bytes);
+        input.signed_acts_manifest = Some(SignedActsManifestMember {
+            bytes: manifest_bytes.clone(),
+            derivation_rule: "signed-acts-manifest-v1".to_string(),
+        });
+
+        let package = write_export(input).expect("write export");
+        let member = package
+            .member_bytes(SIGNED_ACTS_MANIFEST_MEMBER)
+            .expect("068 signed acts manifest member");
+        assert_eq!(member, manifest_bytes.as_slice());
+        assert_eq!(sha256_bytes(member), expected_digest);
+
+        let manifest = decode_cbor_value(&package.manifest_payload).expect("manifest CBOR");
+        let map = manifest.as_map().expect("manifest map");
+        let extensions = map_lookup_map(map, "extensions").expect("extensions");
+        let binding_map = extensions
+            .iter()
+            .find(|(k, _)| k.as_text() == Some(SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION))
+            .map(|(_, v)| v.as_map().expect("binding"))
+            .expect("068 signed acts manifest extension");
+        assert_eq!(
+            map_lookup_bytes(binding_map, "manifest_digest")
+                .expect("manifest_digest")
+                .as_slice(),
+            expected_digest.as_slice()
+        );
+        assert_eq!(
+            binding_map
+                .iter()
+                .find(|(key, _)| key.as_text() == Some("catalog_ref"))
+                .and_then(|(_, value)| value.as_text()),
+            Some(SIGNED_ACTS_MANIFEST_MEMBER)
+        );
+        assert_eq!(
+            binding_map
+                .iter()
+                .find(|(key, _)| key.as_text() == Some("derivation_rule"))
+                .and_then(|(_, value)| value.as_text()),
+            Some("signed-acts-manifest-v1")
+        );
+    }
+
+    #[test]
+    fn rejects_signed_acts_manifest_extension_without_member() {
+        let root = fixtures_root();
+        let mut input = crate::export_001_writer_input(root.as_path());
+        let stale_binding = text_map(vec![
+            (
+                "catalog_ref",
+                Value::Text(SIGNED_ACTS_MANIFEST_MEMBER.to_string()),
+            ),
+            (
+                "derivation_rule",
+                Value::Text("signed-acts-manifest-v1".to_string()),
+            ),
+            ("manifest_digest", Value::Bytes([0xee; 32].to_vec())),
+        ])
+        .expect("stale manifest binding");
+        input.extensions = Some(
+            canonical_map(vec![(
+                Value::Text(SIGNED_ACTS_MANIFEST_MEMBER_EXTENSION.to_string()),
+                stale_binding,
+            )])
+            .expect("extensions map"),
+        );
+        input.signed_acts_manifest = None;
+        let error =
+            write_export(input).expect_err("extension without 068 manifest must reject");
+        assert!(
+            error
+                .to_string()
+                .contains("signed_acts_manifest was not provided"),
+            "{error}"
         );
     }
 

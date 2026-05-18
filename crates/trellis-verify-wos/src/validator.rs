@@ -29,6 +29,9 @@ impl RecordValidator for WosRecordValidator {
         let mut findings = crate::catalog::validate_catalogs(&export);
         findings.extend(crate::clock_semantics::validate_open_clock_export(&export));
         findings.extend(crate::signed_acts::validate_signed_acts_projection(&export));
+        findings.extend(crate::signed_acts::validate_signed_acts_manifest_extension(
+            &export,
+        ));
         findings.extend(crate::policy_closure::validate_policy_closure(&export));
         findings
     }

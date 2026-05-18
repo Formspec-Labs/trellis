@@ -18,7 +18,9 @@ use integrity_cbor::{
 use stack_common_error::StackError;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use trellis_export_writer::{PolicyClosureMember, SignedActsCatalogMember, TrellisTimestamp};
+use trellis_export_writer::{
+    PolicyClosureMember, SignedActsCatalogMember, SignedActsManifestMember, TrellisTimestamp,
+};
 use trellis_types::StoredEvent;
 
 use crate::composition::{
@@ -34,6 +36,7 @@ const POLICY_CLOSURE_VERSION: &str = "wos-formspec-signature-policy-closure-2026
 #[derive(Debug, Default)]
 pub(crate) struct ExportProfileMembers {
     pub(crate) signed_acts_catalog: Option<SignedActsCatalogMember>,
+    pub(crate) signed_acts_manifest: Option<SignedActsManifestMember>,
     pub(crate) policy_closure: Option<PolicyClosureMember>,
 }
 
@@ -41,7 +44,9 @@ impl ExportProfileMembers {
     /// Returns true when domain verification must run before publication.
     #[must_use]
     pub(crate) fn requires_profile_validation(&self) -> bool {
-        self.signed_acts_catalog.is_some() || self.policy_closure.is_some()
+        self.signed_acts_catalog.is_some()
+            || self.signed_acts_manifest.is_some()
+            || self.policy_closure.is_some()
     }
 }
 
@@ -138,14 +143,51 @@ pub(crate) fn build_export_profile_members(
     } else {
         None
     };
+    let manifest_bytes = signed_acts_manifest(scope, events)?;
     Ok(ExportProfileMembers {
         signed_acts_catalog: Some(SignedActsCatalogMember {
             bytes: signed_acts.bytes,
             derivation_rule: signed_acts.derivation_rule.to_string(),
         }),
+        signed_acts_manifest: Some(SignedActsManifestMember {
+            bytes: manifest_bytes,
+            derivation_rule: SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1.to_string(),
+        }),
         policy_closure,
     })
 }
+
+/// Builds the byte-deterministic `068-signed-acts-manifest.cbor` payload.
+///
+/// Walks `events` for the signed-acts source event types, builds the
+/// `(canonical_event_hash, event_type)` tuple list, sorts by
+/// `(hash bytes ASC, event_type ASC)`, and canonical-CBOR encodes per the
+/// `signed-acts-manifest-v1` derivation rule.
+fn signed_acts_manifest(scope: &[u8], events: &[StoredEvent]) -> Result<Vec<u8>, StackError> {
+    let signature_affirmation = wos_signature_affirmation_event_type();
+    let signature_admission_failed = wos_signature_admission_failed_event_type();
+    let mut tuples: Vec<(Vec<u8>, String)> = Vec::new();
+    for event in events {
+        let event_type = event_type(event)?;
+        if event_type == signature_affirmation || event_type == signature_admission_failed {
+            let canonical_event_hash = crate::event_hash(scope, event)?;
+            tuples.push((canonical_event_hash.to_vec(), event_type));
+        }
+    }
+    tuples.sort();
+    let array = Value::Array(
+        tuples
+            .into_iter()
+            .map(|(hash, event_type)| {
+                Value::Array(vec![Value::Bytes(hash), Value::Text(event_type)])
+            })
+            .collect(),
+    );
+    crate::encode_value(&array)
+}
+
+/// Derivation rule string identifying the 068 signed-acts manifest format.
+const SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1: &str = "signed-acts-manifest-v1";
 
 fn signed_acts_catalog(
     scope: &[u8],

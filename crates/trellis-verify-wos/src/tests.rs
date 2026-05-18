@@ -265,11 +265,15 @@ fn given_tampered_signature_catalog_export_when_verify_export_zip_then_stranger_
     );
 }
 
-/// Given a valid substrate export with a projection mismatch, when layered
-/// verification runs, then substrate integrity passes while the relying-party
-/// verdict fails projection integrity.
+/// Given a valid substrate export whose 066 catalog disagrees with the
+/// deterministic WOS/Formspec derivation, when layered verification runs, then
+/// the verifier emits `signed_acts_render_drift` as an advisory and the
+/// relying-party verdict still resolves to Valid.
+///
+/// (Fixture rename to `019-export-006-signed-acts-render-drift` lands in Task
+/// A8 alongside the WOS-TV-017 matrix update.)
 #[test]
-fn given_signed_acts_projection_mismatch_when_layered_report_then_projection_blocks_verdict() {
+fn given_signed_acts_render_drift_when_layered_report_then_verdict_remains_valid_with_advisory() {
     let zip_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
         "../../fixtures/vectors/verify/019-export-006-signed-acts-projection-mismatch/input-export.zip",
     );
@@ -284,13 +288,24 @@ fn given_signed_acts_projection_mismatch_when_layered_report_then_projection_blo
 
     assert!(layered.substrate.structure_verified, "{layered:#?}");
     assert!(layered.substrate.integrity_verified, "{layered:#?}");
+    let drift = report
+        .wos_findings
+        .iter()
+        .find(|finding| finding.kind == "signed_acts_render_drift")
+        .unwrap_or_else(|| panic!("expected render-drift advisory: {report:#?}"));
+    assert_eq!(
+        drift.severity,
+        Severity::Advisory,
+        "render drift must be advisory: {report:#?}"
+    );
     assert_eq!(layered.verdict.cryptographic_integrity, VerdictState::Pass);
-    assert_eq!(layered.verdict.projection_integrity, VerdictState::Fail);
+    assert_eq!(layered.verdict.projection_integrity, VerdictState::Pass);
+    assert_eq!(layered.verdict.domain_admissibility, VerdictState::Pass);
     assert_eq!(
         layered.verdict.relying_party_result,
-        RelyingPartyResult::Invalid
+        RelyingPartyResult::Valid
     );
-    assert_eq!(layered.verdict.blocking_reasons, ["projection_mismatch"]);
+    assert!(layered.verdict.blocking_reasons.is_empty());
 }
 
 /// Given a valid WOS signature-affirmation export, when layered verification
@@ -360,7 +375,10 @@ fn given_unsupported_signed_acts_rule_when_layered_report_then_projection_blocks
         layered.verdict.relying_party_result,
         RelyingPartyResult::Invalid
     );
-    assert_eq!(layered.verdict.blocking_reasons, ["projection_integrity"]);
+    // `signed_acts_catalog_invalid` is a structural-shape kind and lands under
+    // the `projection_mismatch` reason bucket per the verdict mapping in
+    // `integrity-verify`.
+    assert_eq!(layered.verdict.blocking_reasons, ["projection_mismatch"]);
 }
 
 /// Given a valid substrate export with a policy-closure digest mismatch, when

@@ -252,6 +252,7 @@ pub(crate) async fn publish_bundle(
         }),
         witness_key_registry: None,
         signed_acts_catalog: export_profile.signed_acts_catalog,
+        signed_acts_manifest: export_profile.signed_acts_manifest,
         policy_closure: export_profile.policy_closure,
     })?;
     let checkpoint_digest = format!("sha256:{}", hex::encode(package.head_checkpoint_digest));

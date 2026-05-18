@@ -25,6 +25,12 @@ const SIGNED_ACTS_MEMBER: &str = "066-signed-acts.cbor";
 const SIGNED_ACTS_DERIVATION_RULE_V1: &str = "signed-act-projection-wos-formspec-v1";
 const SIGNED_ACTS_DERIVATION_RULE_V2: &str = "signed-act-projection-wos-formspec-v2";
 const FALLBACK_ACT_ID_DERIVATION_RULE: &str = "signed-act-projection-act-id-v1";
+/// 068 signed-acts manifest member (sealed `(hash, event_type)` tuple list).
+const SIGNED_ACTS_MANIFEST_MEMBER: &str = "068-signed-acts-manifest.cbor";
+/// 068 manifest-extension key binding `068-signed-acts-manifest.cbor`.
+const SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION: &str = "trellis.export.signed-acts.manifest.v1";
+/// Derivation-rule identifier the 068 extension MUST declare.
+const SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1: &str = "signed-acts-manifest-v1";
 
 type SignedActsDeriver = fn(&[DomainEvent]) -> Result<Vec<u8>, String>;
 
@@ -54,6 +60,154 @@ struct CorrelatedAct {
     act: ProjectedAct,
     compatibility_key: Vec<u8>,
     source_refs: BTreeMap<Vec<u8>, Value>,
+}
+
+/// Verifies the optional `068-signed-acts-manifest.cbor` member against the
+/// `trellis.export.signed-acts.manifest.v1` extension binding and the
+/// re-derived manifest bytes.
+///
+/// Emits blocking findings:
+/// - `signed_acts_manifest_missing_member` when the extension is declared but
+///   the 068 member is absent (substrate damage / declaration violation).
+/// - `signed_acts_manifest_extension_digest_mismatch` when SHA-256 of the 068
+///   bytes does not match `extension.manifest_digest`.
+/// - `signed_acts_manifest_mismatch` when re-derivation from sealed events does
+///   not byte-for-byte match the archive member.
+/// - `signed_acts_manifest_extension_invalid` when the extension is malformed.
+/// - `signed_acts_manifest_member_unbound` when the 068 member is present but
+///   the extension is absent.
+///
+/// All findings are `Severity::Failure` and surface under
+/// `domain_admissibility` per `is_projection_finding`.
+pub(crate) fn validate_signed_acts_manifest_extension(
+    export: &DomainExport<'_>,
+) -> Vec<DomainFinding> {
+    let extension_bytes = export
+        .manifest_extensions
+        .get(SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION);
+    let member_bytes = export.members.get(SIGNED_ACTS_MANIFEST_MEMBER);
+    match (extension_bytes, member_bytes) {
+        (None, None) => Vec::new(),
+        (None, Some(_)) => vec![finding(
+            "signed_acts_manifest_member_unbound",
+            None,
+            "068-signed-acts-manifest.cbor is present without \
+             trellis.export.signed-acts.manifest.v1",
+        )],
+        (Some(_), None) => vec![finding(
+            "signed_acts_manifest_missing_member",
+            None,
+            "trellis.export.signed-acts.manifest.v1 is declared but \
+             068-signed-acts-manifest.cbor is missing from the export",
+        )],
+        (Some(extension_bytes), Some(member_bytes)) => {
+            validate_bound_signed_acts_manifest_extension(export, extension_bytes, member_bytes)
+        }
+    }
+}
+
+fn validate_bound_signed_acts_manifest_extension(
+    export: &DomainExport<'_>,
+    extension_bytes: &[u8],
+    member_bytes: &[u8],
+) -> Vec<DomainFinding> {
+    let extension = match parse_signed_acts_manifest_extension(extension_bytes) {
+        Ok(extension) => extension,
+        Err(error) => {
+            return vec![finding(
+                "signed_acts_manifest_extension_invalid",
+                None,
+                format!("signed acts manifest extension is invalid: {error}"),
+            )];
+        }
+    };
+    let mut findings = Vec::new();
+    if extension.catalog_ref != SIGNED_ACTS_MANIFEST_MEMBER {
+        findings.push(finding(
+            "signed_acts_manifest_extension_invalid",
+            None,
+            format!(
+                "signed acts manifest catalog_ref must be {SIGNED_ACTS_MANIFEST_MEMBER}, got {}",
+                extension.catalog_ref
+            ),
+        ));
+    }
+    if extension.derivation_rule != SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1 {
+        findings.push(finding(
+            "signed_acts_manifest_extension_invalid",
+            None,
+            format!(
+                "signed acts manifest derivation_rule must be \
+                 {SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1}, got {}",
+                extension.derivation_rule
+            ),
+        ));
+    }
+    if sha256_bytes(member_bytes) != extension.manifest_digest {
+        findings.push(finding(
+            "signed_acts_manifest_extension_digest_mismatch",
+            None,
+            "signed acts manifest digest does not match manifest extension",
+        ));
+        return findings;
+    }
+    let manifest = match derive_signed_acts_manifest_v1(export.events) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            findings.push(finding(
+                "signed_acts_manifest_extension_invalid",
+                None,
+                format!("signed acts manifest derivation failed: {error}"),
+            ));
+            return findings;
+        }
+    };
+    let derived = match encode_signed_acts_manifest_v1(&manifest) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            findings.push(finding(
+                "signed_acts_manifest_extension_invalid",
+                None,
+                format!("signed acts manifest encoding failed: {error}"),
+            ));
+            return findings;
+        }
+    };
+    if derived != member_bytes {
+        findings.push(finding(
+            "signed_acts_manifest_mismatch",
+            None,
+            "068-signed-acts-manifest.cbor bytes do not match deterministic \
+             signed-acts-manifest-v1 derivation",
+        ));
+    }
+    findings
+}
+
+#[derive(Clone, Debug)]
+struct SignedActsManifestExtension {
+    catalog_ref: String,
+    manifest_digest: [u8; 32],
+    derivation_rule: String,
+}
+
+fn parse_signed_acts_manifest_extension(
+    bytes: &[u8],
+) -> Result<SignedActsManifestExtension, String> {
+    let value = decode_value(bytes)?;
+    let map = value
+        .as_map()
+        .ok_or_else(|| "signed acts manifest extension is not a map".to_string())?;
+    Ok(SignedActsManifestExtension {
+        catalog_ref: map_lookup_text(map, "catalog_ref").map_err(|error| error.to_string())?,
+        manifest_digest: map_lookup_fixed_bytes(map, "manifest_digest", 32)
+            .map_err(|error| error.to_string())?
+            .as_slice()
+            .try_into()
+            .expect("fixed bytes length checked"),
+        derivation_rule: map_lookup_text(map, "derivation_rule")
+            .map_err(|error| error.to_string())?,
+    })
 }
 
 pub(crate) fn validate_signed_acts_projection(export: &DomainExport<'_>) -> Vec<DomainFinding> {
@@ -155,8 +309,13 @@ fn validate_bound_signed_acts_projection(
         }
     };
     if derived != member_bytes {
-        findings.push(finding(
-            "signed_acts_projection_mismatch",
+        // Render drift is advisory: the 068 manifest member is the substrate-anchored
+        // proof of which events landed; the 066 catalog is a downstream projection
+        // whose bytes can legitimately drift across renderers. Substrate-shape
+        // failures (catalog missing, digest mismatched, catalog unbound, CBOR
+        // invalid) remain `Severity::Failure` above.
+        findings.push(advisory_finding(
+            "signed_acts_render_drift",
             None,
             "signed acts catalog does not match deterministic WOS/Formspec derivation",
         ));
@@ -766,6 +925,14 @@ fn finding(
     DomainFinding::new(kind, event_hash, Severity::Failure, message)
 }
 
+fn advisory_finding(
+    kind: impl Into<String>,
+    event_hash: Option<[u8; 32]>,
+    message: impl Into<String>,
+) -> DomainFinding {
+    DomainFinding::new(kind, event_hash, Severity::Advisory, message)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -819,7 +986,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_acts_projection_mismatch_is_failure() {
+    fn signed_acts_render_drift_is_advisory() {
         let event = signature_event();
         let catalog = encode_value(
             &text_map(vec![
@@ -845,11 +1012,20 @@ mod tests {
             manifest_extensions: &manifest_extensions,
         });
 
+        let drift = findings
+            .iter()
+            .find(|finding| finding.kind == "signed_acts_render_drift")
+            .unwrap_or_else(|| panic!("expected render-drift finding: {findings:#?}"));
+        assert_eq!(
+            drift.severity,
+            Severity::Advisory,
+            "render drift must be advisory, not blocking: {findings:#?}"
+        );
         assert!(
             findings
                 .iter()
-                .any(|finding| finding.kind == "signed_acts_projection_mismatch"),
-            "{findings:#?}"
+                .all(|finding| finding.kind != "signed_acts_projection_mismatch"),
+            "old finding kind must no longer be emitted: {findings:#?}"
         );
     }
 
@@ -958,7 +1134,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .all(|finding| finding.kind != "signed_acts_projection_mismatch"),
+                .all(|finding| finding.kind != "signed_acts_render_drift"
+                    && finding.kind != "signed_acts_projection_mismatch"),
             "{findings:#?}"
         );
     }
@@ -992,7 +1169,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .all(|finding| finding.kind != "signed_acts_projection_mismatch"),
+                .all(|finding| finding.kind != "signed_acts_render_drift"
+                    && finding.kind != "signed_acts_projection_mismatch"),
             "{findings:#?}"
         );
     }
@@ -1210,7 +1388,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .all(|finding| finding.kind != "signed_acts_projection_mismatch"),
+                .all(|finding| finding.kind != "signed_acts_render_drift"
+                    && finding.kind != "signed_acts_projection_mismatch"),
             "{findings:#?}"
         );
     }
@@ -1647,5 +1826,206 @@ mod tests {
             manifest.is_empty(),
             "non-signed-acts event_types must be excluded: {manifest:?}"
         );
+    }
+
+    // --- 068 signed-acts manifest extension verifier tests ----------------
+
+    fn manifest_extension_for(member_bytes: &[u8]) -> Vec<u8> {
+        encode_value(
+            &text_map(vec![
+                (
+                    "catalog_ref",
+                    Value::Text(SIGNED_ACTS_MANIFEST_MEMBER.to_string()),
+                ),
+                (
+                    "derivation_rule",
+                    Value::Text(SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1.to_string()),
+                ),
+                (
+                    "manifest_digest",
+                    Value::Bytes(sha256_bytes(member_bytes).to_vec()),
+                ),
+            ])
+            .expect("manifest extension"),
+        )
+        .expect("encode")
+    }
+
+    #[test]
+    fn signed_acts_manifest_extension_absent_and_member_absent_is_quiet() {
+        let event = signature_event();
+        let members = BTreeMap::new();
+        let manifest_extensions = BTreeMap::new();
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        assert!(
+            findings.iter().all(|finding| !finding
+                .kind
+                .starts_with("signed_acts_manifest_")),
+            "{findings:#?}"
+        );
+    }
+
+    #[test]
+    fn signed_acts_manifest_extension_round_trips_through_rust_verifier() {
+        let event = signature_event();
+        let manifest =
+            derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        let extension = manifest_extension_for(&encoded);
+        let mut members = BTreeMap::new();
+        members.insert(SIGNED_ACTS_MANIFEST_MEMBER.to_string(), encoded);
+        let mut manifest_extensions = BTreeMap::new();
+        manifest_extensions
+            .insert(SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION.to_string(), extension);
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        assert!(
+            findings.iter().all(|finding| !finding
+                .kind
+                .starts_with("signed_acts_manifest_")),
+            "expected no manifest findings: {findings:#?}"
+        );
+    }
+
+    #[test]
+    fn signed_acts_manifest_mismatch_when_member_bytes_disagree_with_derivation() {
+        let event = signature_event();
+        let manifest =
+            derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+        let mut encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        // Mutate a payload byte (avoid the array head 0x81 0x82 ... and the bstr
+        // length tag 0x58 0x20). Flipping a hash byte inside the bstr keeps the
+        // SHA-256 of the bytes consistent with the extension digest (we recompute
+        // the extension after the mutation), so only the derivation comparison
+        // disagrees.
+        let mutate_offset = encoded.len() - 1;
+        encoded[mutate_offset] ^= 0x01;
+        let extension = manifest_extension_for(&encoded);
+        let mut members = BTreeMap::new();
+        members.insert(SIGNED_ACTS_MANIFEST_MEMBER.to_string(), encoded);
+        let mut manifest_extensions = BTreeMap::new();
+        manifest_extensions
+            .insert(SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION.to_string(), extension);
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        let blocking = findings
+            .iter()
+            .find(|finding| finding.kind == "signed_acts_manifest_mismatch")
+            .unwrap_or_else(|| panic!("expected manifest mismatch: {findings:#?}"));
+        assert_eq!(blocking.severity, Severity::Failure);
+    }
+
+    #[test]
+    fn signed_acts_manifest_extension_digest_mismatch_when_extension_digest_wrong() {
+        let event = signature_event();
+        let manifest =
+            derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        // Build an extension that declares a wrong digest.
+        let wrong_extension = encode_value(
+            &text_map(vec![
+                (
+                    "catalog_ref",
+                    Value::Text(SIGNED_ACTS_MANIFEST_MEMBER.to_string()),
+                ),
+                (
+                    "derivation_rule",
+                    Value::Text(SIGNED_ACTS_MANIFEST_DERIVATION_RULE_V1.to_string()),
+                ),
+                ("manifest_digest", Value::Bytes(vec![0xab; 32])),
+            ])
+            .expect("extension"),
+        )
+        .expect("encode");
+        let mut members = BTreeMap::new();
+        members.insert(SIGNED_ACTS_MANIFEST_MEMBER.to_string(), encoded);
+        let mut manifest_extensions = BTreeMap::new();
+        manifest_extensions.insert(
+            SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION.to_string(),
+            wrong_extension,
+        );
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        let blocking = findings
+            .iter()
+            .find(|finding| finding.kind == "signed_acts_manifest_extension_digest_mismatch")
+            .unwrap_or_else(|| panic!("expected digest mismatch: {findings:#?}"));
+        assert_eq!(blocking.severity, Severity::Failure);
+        // Once the digest fails, derivation comparison is short-circuited.
+        assert!(
+            findings
+                .iter()
+                .all(|finding| finding.kind != "signed_acts_manifest_mismatch"),
+            "{findings:#?}"
+        );
+    }
+
+    #[test]
+    fn signed_acts_manifest_missing_member_when_extension_declared_without_member() {
+        let event = signature_event();
+        let manifest =
+            derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        let extension = manifest_extension_for(&encoded);
+        let members = BTreeMap::new(); // 068 member absent.
+        let mut manifest_extensions = BTreeMap::new();
+        manifest_extensions
+            .insert(SIGNED_ACTS_MANIFEST_EXPORT_EXTENSION.to_string(), extension);
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        let blocking = findings
+            .iter()
+            .find(|finding| finding.kind == "signed_acts_manifest_missing_member")
+            .unwrap_or_else(|| panic!("expected missing-member finding: {findings:#?}"));
+        assert_eq!(blocking.severity, Severity::Failure);
+    }
+
+    #[test]
+    fn signed_acts_manifest_member_unbound_when_member_present_without_extension() {
+        let event = signature_event();
+        let manifest =
+            derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        let mut members = BTreeMap::new();
+        members.insert(SIGNED_ACTS_MANIFEST_MEMBER.to_string(), encoded);
+        let manifest_extensions = BTreeMap::new();
+
+        let findings = WosRecordValidator.validate_export(DomainExport {
+            events: &[event],
+            members: &members,
+            manifest_extensions: &manifest_extensions,
+        });
+
+        let blocking = findings
+            .iter()
+            .find(|finding| finding.kind == "signed_acts_manifest_member_unbound")
+            .unwrap_or_else(|| panic!("expected unbound-member finding: {findings:#?}"));
+        assert_eq!(blocking.severity, Severity::Failure);
     }
 }
