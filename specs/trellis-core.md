@@ -1246,6 +1246,8 @@ A Phase 1 verifier MUST NOT perform a live registry lookup to interpret an event
 
 A package MAY reference external anchoring (transparency log URL, Bitcoin block anchor, RFC 3161 TSA receipt). Such references MUST be marked explicitly as optional external proof material in the manifest and MUST NOT be required for baseline Phase 1 verification. A Phase 1 verifier that the package's signed tree head and consistency-proof material verify MUST return "verified" even if the external anchor cannot be fetched. Phase 4 deployments MAY register a deployment class that elevates external anchoring to required; absent such a class, anchoring is additive.
 
+**AnchorAdapter extension point (informative).** The wire shape of `ExternalAnchor` is defined in Appendix A §28; production of external anchor evidence is a per-deployment adapter concern, not a Core byte protocol. The reference center crate provides an `AnchorAdapter` trait so adopters can plug in OpenTimestamps, Sigstore Rekor, Trillian, or another anchoring substrate without changing center-crate code. The Phase-1 reference server passes `external_anchors: Vec::new()`; no runtime consumer is required. Design context lives in `thoughts/specs/2026-04-24-anchor-substrate-spike.md` (normative-adjacent until a Core/Companion ADR promotes a specific adapter contract).
+
 ### 16.4 Omitted-payload honesty
 
 If a package omits ciphertext bytes or payload readability material (because payloads are reader-held and the verifier is not a reader, or because payloads are intentionally redacted), the package MUST still verify the structure, signatures, provenance, and append claims that are verifiable from included bytes. The verification algorithm (§19) returns `structure_verified`, `integrity_verified`, and `readability_verified` separately, plus a list of omitted payload checks. A package that silently fails — that omits both material and the declaration of omission — is non-conformant.
@@ -1625,6 +1627,16 @@ policy evidence report that posture through their domain validators.
 Phase-1 verifiers that implement extension version 1 MUST reject the export
 when any seal-fence field disagrees with the manifest, event stream, derived
 `export_attempt_id`, or policy-closure member presence.
+
+**Future versioning.** Verifiers of extension version 1 (today's runtime)
+MAY accept an export whose manifest omits `trellis.export.seal-fence.v1` —
+the absence short-circuit at
+`integrity-stack/crates/integrity-verify/src/trellis/export.rs::verify_seal_fence_extension`
+exists only for backwards compatibility with pre-G2 exports written at
+`seal_version = 1` before the extension was registered. For any
+`seal_version >= 2` (when introduced), the extension MUST be present and
+verifiers MUST fail-close on absence under the registered version. The
+absence short-circuit branch SHALL be removed at the first version bump.
 
 **Signed-acts manifest (§18.3f).** `trellis.export.signed-acts.manifest.v1` is
 the manifest extension hook for the substrate-anchored 068 signed-acts manifest.
@@ -2445,6 +2457,7 @@ semantics.
 | `signed_acts_manifest_extension_digest_mismatch` | 3.h / manifest extension check | `SHA-256(068-signed-acts-manifest.cbor)` does not equal `trellis.export.signed-acts.manifest.v1.manifest_digest`. |
 | `signed_acts_manifest_missing_member` | 3.h / manifest extension check | Extension `trellis.export.signed-acts.manifest.v1` is declared but `068-signed-acts-manifest.cbor` is absent from the archive. |
 | `signed_acts_manifest_member_unbound` | 3.h / bundle structure invariant | `068-signed-acts-manifest.cbor` is present in the archive but `trellis.export.signed-acts.manifest.v1` extension is absent; the member is unbound. |
+| `signed_acts_manifest_extension_invalid` | 3.h / manifest extension check | `trellis.export.signed-acts.manifest.v1` is present but its bytes are not a structurally valid extension: the extension fails canonical-CBOR map parse, `catalog_ref` is not `"068-signed-acts-manifest.cbor"`, `derivation_rule` is not `"signed-acts-manifest-v1"`, or re-derivation from sealed source events fails before a byte-compare can run (`derivation_rule` recognized but inputs malformed). Distinct from `signed_acts_manifest_mismatch` (extension shape valid; digest+re-derive byte-compare fail) and from `signed_acts_manifest_extension_digest_mismatch` (extension shape valid; declared digest does not match member SHA-256). |
 | `bundle_unbound_member` | 3.i / bundle structure invariant | An archive member is present that is not bound by the manifest (top-level digest field), any registered extension's `catalog_ref`, or the manifest's `interop_sidecars` list. |
 
 The enum is **append-only**. New categories MUST land in this table first, with a matching `TR-CORE-*` matrix row and a fixture vector under `fixtures/vectors/tamper/`, before a verifier or a fixture references the value. Removing or renaming a value is a wire break; deprecate by adding a successor row and retaining the prior value as a synonym. Traceability: **TR-CORE-068** (matrix row) — enforced by `scripts/check-specs.py` rule R13 over the tamper corpus.
