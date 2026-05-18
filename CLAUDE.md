@@ -6,10 +6,9 @@ Cryptographic integrity substrate beneath Formspec (intake) and WOS (governance)
 
 | For | Read |
 |---|---|
-| Behavioral interrupts before any task | [`../.claude/operating-mode.md`](../.claude/operating-mode.md) |
-| Owner operating preferences | [`../.claude/user_profile.md`](../.claude/user_profile.md) |
-| Stack vision + Trellis section | [`../VISION.md`](../VISION.md) |
-| Platform decision register | [`../thoughts/specs/2026-04-22-platform-decisioning-forks-and-options.md`](../thoughts/specs/2026-04-22-platform-decisioning-forks-and-options.md) |
+| Behavioral interrupts + economic model | [`../CLAUDE.md`](../CLAUDE.md) — read first; interrupts are inline |
+| Methods + methodology spine | [`../DEVELOPMENT-PHILOSOPHY.md`](../DEVELOPMENT-PHILOSOPHY.md) |
+| Cross-stack ADRs (settled commitments, open forks) | [`../thoughts/adr/`](../thoughts/adr/) |
 | Parent repo guide | [`../CLAUDE.md`](../CLAUDE.md) |
 | One-page framing + internal pointers | [`README.md`](README.md) |
 | Current tactical work | [`TODO.md`](TODO.md) |
@@ -23,7 +22,7 @@ Cryptographic integrity substrate beneath Formspec (intake) and WOS (governance)
 
 For public-facing stack framing, see [`../STACK.md`](../STACK.md) — lookup-only.
 
-**Conflict resolution:** see [`../.claude/operating-mode.md`](../.claude/operating-mode.md).
+**Conflict resolution:** Owner signals in the current conversation override everything else. See [`../CLAUDE.md`](../CLAUDE.md) §Behavioral interrupts.
 
 ## Engineering philosophy — Trellis-specific deltas
 
