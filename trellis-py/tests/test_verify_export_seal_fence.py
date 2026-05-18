@@ -200,6 +200,110 @@ def test_seal_fence_policy_closure_digest_tamper() -> None:
     assert "seal_fence_policy_closure_digest_recompute_mismatch" in kinds
 
 
+# --- F5: scope-boundary negative assertion --------------------------------
+
+
+def test_fully_consistent_member_rewrite_NOT_caught_by_seal_fence() -> None:
+    """F5 from reference-texts Section 4 — seal-fence scope boundary.
+
+    A key-holder attacker who fully and consistently rewrites a member —
+    including every dependent fence field AND the manifest's own digest
+    for that member — is BEYOND the seal-fence verifier's reach. The
+    seal-fence verifier cross-checks fence-claimed values against
+    archive-recomputed values; if every value is internally consistent,
+    the verifier has no information to reject on.
+
+    Construction here: drop the last event from `010-events.cbor`, then
+    reseat all four dependent fields consistently:
+      - manifest's `events_digest` → sha256(truncated events bytes)
+      - fence's `events_digest`    → same
+      - fence's `event_count`      → new length
+      - fence's `high_water_*`     → new last-event sequence + hash
+
+    We do NOT need to re-sign the manifest COSE_Sign1 because
+    `verify_seal_fence_extension` reads the parsed manifest map directly
+    (it does not validate the envelope signature here).
+
+    Expected outcome: NO `seal_fence_*` findings. The load-bearing claim
+    is the empty result — the seal-fence layer cannot catch this attack
+    class. This pins the architectural scope boundary as a normative
+    test.
+
+    NOTE: the catching layer for this attack class is **chain-integrity
+    verification** — specifically per-event COSE_Sign1 signature
+    verification plus the manifest's own COSE_Sign1 signature
+    verification. A consistent rewrite requires re-signing the manifest
+    (and every event whose `prev_hash` chain was disturbed), which
+    requires the producer's signing key. A key-holder attacker is a
+    different threat model that the substrate does not defend against
+    at this layer (per Trellis operational discipline — signing-key
+    compromise is a Phase-2 operator concern). See reference-texts
+    Section 4 (F5) and the fixture README template documented there.
+    """
+    # Use the three-event-chain fixture instead of the single-event 006:
+    # truncating from 1 event is degenerate (empty events array; seal-fence
+    # parser rejects on its own grounds). A multi-event fixture lets us
+    # exercise the "drop last, reseat fence" attack path cleanly.
+    multi_event_zip = (
+        FIXTURES / "export" / "003-three-event-transition-chain" / "expected-export.zip"
+    )
+    archive = core.parse_export_zip(multi_event_zip.read_bytes())
+    manifest_sign1 = core._parse_sign1_bytes(archive["000-manifest.cbor"])
+    manifest_map = cbor2.loads(manifest_sign1.payload)
+    assert isinstance(manifest_map, dict)
+    seal_fence = _build_seal_fence(archive, manifest_map)
+    extensions = copy.deepcopy(manifest_map.get("extensions") or {})
+    extensions[SEAL_FENCE_EXPORT_EXTENSION] = seal_fence
+    manifest_map["extensions"] = extensions
+
+    # Re-derive truncated events member bytes (drop the last event).
+    original_events_bytes = archive["010-events.cbor"]
+    events_array = cbor2.loads(original_events_bytes)
+    assert isinstance(events_array, list) and len(events_array) >= 2, (
+        "three-event-chain fixture must ship >= 2 events for a meaningful truncation"
+    )
+    truncated_events = events_array[:-1]
+    truncated_events_bytes = cbor2.dumps(truncated_events)
+
+    # Reseat the manifest's events_digest field to match the truncated bytes.
+    truncated_events_digest = core._sha256(truncated_events_bytes)
+    manifest_map["events_digest"] = truncated_events_digest
+
+    # Reseat the fence to be fully consistent with the truncation:
+    # events_digest, event_count, high_water_sequence, high_water_event_hash.
+    new_high_water = core._decode_event_details(
+        core._parse_sign1_array(truncated_events_bytes)[-1]
+    )
+    fence = manifest_map["extensions"][SEAL_FENCE_EXPORT_EXTENSION]
+    fence["events_digest"] = truncated_events_digest
+    fence["event_count"] = len(truncated_events)
+    fence["high_water_sequence"] = new_high_water.sequence
+    fence["high_water_event_hash"] = new_high_water.canonical_event_hash
+    # tree_size also derives from event count — reseat it so the
+    # extension.event_count vs manifest.tree_size cross-check stays clean.
+    manifest_map["tree_size"] = len(truncated_events)
+    # Recompute the deterministic export_attempt_id over the new high-water material.
+    fence["export_attempt_id"] = export_attempt_id(
+        fence["bundle_scope"],
+        fence["seal_version"],
+        new_high_water.sequence,
+        new_high_water.canonical_event_hash,
+    )
+
+    # Swap in the truncated events member.
+    archive["010-events.cbor"] = truncated_events_bytes
+
+    findings = verify_seal_fence_extension(archive, manifest_map)
+    seal_fence_findings = [f for f in findings if f.kind.startswith("seal_fence_")]
+    # Load-bearing claim: zero seal-fence findings. This attack class is
+    # outside seal-fence's scope; the empty result is the assertion.
+    assert seal_fence_findings == [], (
+        "seal-fence verifier MUST NOT emit findings on a fully-consistent "
+        "member rewrite — chain-integrity is the catching layer. "
+        f"Got: {[(f.kind, f.detail) for f in seal_fence_findings]}"
+    )
+
+
 # --- Domain-separation byte oracle -----------------------------------------
 
 
