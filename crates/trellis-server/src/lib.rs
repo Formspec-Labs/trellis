@@ -1862,6 +1862,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn publish_bundle_is_byte_identical_across_independent_states() {
+        // Substrate-determinism invariant: identical (signing_key, scope, events,
+        // compute) MUST produce a byte-identical export ZIP regardless of which
+        // `TrellisServerState` instance produced it. Same-state republish tests
+        // can mask per-instance non-determinism (random nonces, instance
+        // counters, time-of-day leaks); two independent states catch it.
+        //
+        // Events are admitted once against a source state so both publish
+        // targets see the same canonical `Vec<StoredEvent>`. The admission
+        // path uses `SystemTime::now()` for event timestamps, so building two
+        // event sequences independently would diverge for reasons unrelated to
+        // `publish_bundle`. Sharing one admitted sequence isolates the
+        // publication path as the unit under test.
+        let signing_key = test_signing_key();
+        let source_state = test_state_with_signing_key(signing_key.clone());
+        let app = router(source_state.clone()).expect("router");
+        let response = app
+            .oneshot(post_request(
+                "/v1/scopes/case_cross_state_identity/events",
+                append_body("idem-cross-state-identity"),
+            ))
+            .await
+            .expect("append event response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let events = source_state
+            .repository
+            .list_scope(b"case_cross_state_identity")
+            .await
+            .expect("load admitted events");
+
+        let state_a = test_state_with_signing_key(signing_key.clone());
+        let state_b = test_state_with_signing_key(signing_key);
+        let compute = append::default_public_compute_context();
+
+        let bundle_a = publish_bundle(
+            &state_a,
+            b"case_cross_state_identity",
+            &events,
+            false,
+            &compute,
+        )
+        .await
+        .expect("publish bundle on state A");
+        let bundle_b = publish_bundle(
+            &state_b,
+            b"case_cross_state_identity",
+            &events,
+            false,
+            &compute,
+        )
+        .await
+        .expect("publish bundle on state B");
+
+        assert_eq!(
+            bundle_a.export_attempt_id, bundle_b.export_attempt_id,
+            "identical inputs across independent states must agree on export-attempt identity"
+        );
+
+        let bytes_a = state_a
+            .artifact_store
+            .get(&bundle_a.artifact_ref)
+            .await
+            .expect("load state A bundle")
+            .expect("state A bundle bytes");
+        let bytes_b = state_b
+            .artifact_store
+            .get(&bundle_b.artifact_ref)
+            .await
+            .expect("load state B bundle")
+            .expect("state B bundle bytes");
+
+        assert_eq!(
+            bytes_a, bytes_b,
+            "publish_bundle MUST emit byte-identical archives across independent server states for identical inputs"
+        );
+    }
+
+    #[tokio::test]
     async fn signature_profile_bundle_republish_is_byte_identical() {
         let state = test_state();
         let app = router(state.clone()).expect("router");
@@ -2269,9 +2347,17 @@ mod tests {
     }
 
     fn test_state() -> TrellisServerState {
+        test_state_with_signing_key(test_signing_key())
+    }
+
+    /// Builds a `TrellisServerState` with a caller-supplied signing key.
+    ///
+    /// Used by cross-state byte-identity assertions to construct two independent
+    /// server instances that share signing material; otherwise mirrors `test_state`.
+    fn test_state_with_signing_key(signing_key: ServerSigningKey) -> TrellisServerState {
         TrellisServerState::new(
             Arc::new(InMemoryEventRepository::new()),
-            test_signing_key(),
+            signing_key,
             TenantHeaderMode::MultiProducer,
         )
     }
