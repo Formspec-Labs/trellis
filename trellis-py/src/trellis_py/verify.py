@@ -4438,6 +4438,161 @@ def _verify_interop_sidecars(
     return outcomes, None
 
 
+def _build_bound_member_set(
+    manifest_map: dict,
+    parsed_bindings: list["RegistryBindingInfo"],
+    events: list["ParsedSign1"],
+    payload_blobs: dict[bytes, bytes],
+    archive: dict[str, bytes],
+) -> set[str]:
+    """Core §19 step 3.i admitted-member-set builder. Mirror of Rust
+    ``build_bound_member_set`` at
+    integrity-stack/crates/integrity-verify/src/trellis/export.rs
+    (commit b15f53f). Enumerates archive members that are bound by
+    Core §18.2's always-admitted set OR by data inside the signed
+    manifest (top-level digest fields, ``registry_bindings``,
+    ``interop_sidecars[].path``, registered manifest extensions and
+    their fixed member names / ``catalog_ref`` values). Members under
+    ``interop-sidecars/`` are admitted wholesale because
+    ``_verify_interop_sidecars`` has already fatal-aborted any unlisted
+    file. Field-evaluation order matches the Rust sweep so first-fire
+    membership decisions stay byte-identical.
+    """
+    bound: set[str] = set()
+
+    # §18.2 always-required core members.
+    for required in (
+        "000-manifest.cbor",
+        "010-events.cbor",
+        "020-inclusion-proofs.cbor",
+        "025-consistency-proofs.cbor",
+        "030-signing-key-registry.cbor",
+        "040-checkpoints.cbor",
+    ):
+        bound.add(required)
+
+    # §18.2 always-admitted helper members. ``099-trellis-cli-*`` is a
+    # prefix family covering linux-x86_64, linux-aarch64, darwin-arm64,
+    # windows-x86_64.exe per the §18.2 table.
+    bound.add("090-verify.sh")
+    bound.add("098-README.md")
+    for member_path in archive.keys():
+        if member_path.startswith("099-trellis-cli-"):
+            bound.add(member_path)
+        # ``_verify_interop_sidecars`` already fatal-aborts unlisted
+        # files under this prefix; reaching the sweep means every
+        # present member here passed the manifest-listing check.
+        if member_path.startswith(_INTEROP_SIDECARS_PATH_PREFIX):
+            bound.add(member_path)
+
+    # §14 registry bindings → 050-registries/<digest_hex>.cbor.
+    for binding in parsed_bindings:
+        bound.add(f"050-registries/{binding.digest_hex}.cbor")
+
+    # §18.2 payload binding — each event's content_hash names a
+    # 060-payloads/<hex>.bin member when externalized; the same hex is
+    # legitimate for inlined payloads too if the writer chose to also
+    # embed bytes. Admit both shapes.
+    for event in events:
+        try:
+            details = _decode_event_details(event)
+        except VerifyError:
+            continue
+        bound.add(f"060-payloads/{_hex(details.content_hash)}.bin")
+    for digest in payload_blobs.keys():
+        bound.add(f"060-payloads/{_hex(digest)}.bin")
+
+    # §18.3a interop_sidecars[].path admits listed sidecars individually.
+    # The ``interop-sidecars/`` prefix walk above already covered them,
+    # but also admit by literal path in case a manifest authoring quirk
+    # lists a path outside the conventional prefix (which
+    # ``_verify_interop_sidecars`` would have fatal-aborted earlier;
+    # this branch is defensive).
+    interop_entries = manifest_map.get("interop_sidecars")
+    if isinstance(interop_entries, list):
+        for entry in interop_entries:
+            if isinstance(entry, dict):
+                path = entry.get("path")
+                if isinstance(path, str):
+                    bound.add(path)
+
+    # Registered manifest extensions admit fixed-name and catalog_ref
+    # members. The substrate verifier validates a subset of these
+    # extensions (attachments, certificates, erasure, supersession,
+    # open-clocks, seal-fence). For consumer-bound extensions validated
+    # in ``verify_wos`` (signed-acts, signed-acts.manifest,
+    # policy-closure, signature-affirmations, intake-handoffs,
+    # witness-key-registry), the substrate sweep admits the spec-pinned
+    # member name when the URI is present so the generic sweep cannot
+    # fail a current valid export.
+    extensions = manifest_map.get("extensions")
+    if isinstance(extensions, dict):
+        for uri, value in extensions.items():
+            if not isinstance(uri, str):
+                continue
+            if uri == "trellis.export.attachments.v1":
+                # Substrate-validated extensions with fixed member names.
+                bound.add("061-attachments.cbor")
+            elif uri == "trellis.export.supersession-graph.v1":
+                bound.add("064-supersession-graph.json")
+                # Admit 070-predecessors/<bundle_path> for each
+                # predecessor with non-null ``bundle_path`` named in
+                # the graph member (best-effort; an unparseable graph
+                # member is already surfaced as
+                # ``supersession_graph_invalid`` elsewhere and the
+                # sweep keeps the predecessor members unbound, which
+                # is safe — they have no other binding).
+                graph_bytes = archive.get("064-supersession-graph.json")
+                if graph_bytes is not None:
+                    try:
+                        graph = _parse_supersession_graph(graph_bytes)
+                    except VerifyError:
+                        graph = None
+                    if graph is not None:
+                        for predecessor in graph["predecessors"]:
+                            path = predecessor.get("bundle_path")
+                            if isinstance(path, str):
+                                bound.add(path)
+            elif uri == "trellis.export.open-clocks.v1":
+                bound.add("open-clocks.json")
+            elif uri in (
+                "trellis.export.certificates-of-completion.v1",
+                "trellis.export.erasure-evidence.v1",
+            ):
+                # Substrate-validated extensions with ``catalog_ref``.
+                if isinstance(value, dict):
+                    catalog_ref = value.get("catalog_ref")
+                    if isinstance(catalog_ref, str):
+                        bound.add(catalog_ref)
+            elif uri == "trellis.export.witness-key-registry.v1":
+                # Consumer-bound extensions (validated in verify_wos).
+                # Admit the spec-pinned fixed member names per Core
+                # §18.2 so the generic sweep cannot reject a current
+                # valid export.
+                bound.add("031-witness-key-registry.cbor")
+            elif uri == "trellis.export.signed-acts.v1":
+                bound.add("066-signed-acts.cbor")
+            elif uri == "trellis.export.signed-acts.manifest.v1":
+                bound.add("068-signed-acts-manifest.cbor")
+            elif uri == "trellis.export.policy-closure.v1":
+                bound.add("067-policy-closure.cbor")
+            elif uri == "trellis.export.signature-affirmations.v1":
+                bound.add("062-signature-affirmations.cbor")
+            elif uri == "trellis.export.intake-handoffs.v1":
+                bound.add("063-intake-handoffs.cbor")
+            elif uri == "trellis.export.seal-fence.v1":
+                # Seal-fence is manifest-extension-only with no member binding.
+                pass
+            else:
+                # Unknown extensions cannot admit members. Members they
+                # implicitly reference will surface as
+                # ``bundle_unbound_member`` until the extension lands
+                # in the registered set.
+                pass
+
+    return bound
+
+
 def verify_export_zip(
     export_zip: bytes,
     identity_event_type_admitted: Callable[[str], bool] = _is_identity_attestation_event_type,
@@ -4947,6 +5102,25 @@ def verify_export_zip(
                 report.proof_failures.append(
                     VerificationFailure("consistency_proof_mismatch", location)
                 )
+
+    # Core §19 step 3.i — generic bundle_unbound_member sweep. Enumerates
+    # members admitted by Core §18.2 + manifest semantics; anything else
+    # surfaces `bundle_unbound_member`. Per the §19 step 3.i both-fire
+    # rule (trellis-core.md lines 1774-1783, Task 1.a), this sweep fires
+    # INDEPENDENTLY of per-extension `*_unbound` findings (e.g.
+    # `supersession_graph_unbound`, `policy_closure_unbound`); a
+    # per-extension finding does NOT suppress the generic sweep.
+    # Mirror of Rust `build_bound_member_set` at
+    # integrity-stack/crates/integrity-verify/src/trellis/export.rs
+    # (commit b15f53f). TR-CORE-181.
+    bound_members = _build_bound_member_set(
+        manifest_map, parsed_bindings, events, payload_blobs, archive
+    )
+    for member_path in archive.keys():
+        if member_path not in bound_members:
+            report.event_failures.append(
+                VerificationFailure("bundle_unbound_member", member_path)
+            )
 
     report.structure_verified = True
     report.integrity_verified = (
