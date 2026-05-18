@@ -1,0 +1,21 @@
+{
+  "case_id": "R4-duplicate-nested-key",
+  "rule": "R4",
+  "kind": "reject",
+  "summary": "Nested map under a single root key contains duplicate inner keys — R4 applies recursively at every nesting depth.",
+  "input": {
+    "map": [
+      {
+        "key": { "tstr": "outer" },
+        "value": {
+          "map": [
+            { "key": { "tstr": "a" }, "value": { "uint": 1 } },
+            { "key": { "tstr": "a" }, "value": { "uint": 2 } }
+          ]
+        }
+      }
+    ]
+  },
+  "expected_reject_code": "duplicate_map_key",
+  "forward_compatibility": false
+}

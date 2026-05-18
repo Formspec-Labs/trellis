@@ -1,0 +1,9 @@
+{
+  "case_id": "R1-nint-neg25",
+  "rule": "R1",
+  "kind": "encode",
+  "summary": "Negative integer -25 — first value (magnitude 24) needing the 1-byte argument form.",
+  "input": { "nint": -25 },
+  "expected_output_hex": "3818",
+  "forward_compatibility": false
+}

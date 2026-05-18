@@ -1,0 +1,10 @@
+{
+  "case_id": "R7-generic-tag-disallowed",
+  "rule": "R7",
+  "kind": "reject",
+  "summary": "Generic CBOR tag 100 wrapping an integer. Under R7, generic tagged items are forbidden in canonical preimage output except where a specific Trellis spec section explicitly names a tag. The Rust oracle today passes tagged values through (R7 is inert; no Trellis preimage shape introduces a generic tag as input). A conformant runtime that implements an R7 allowlist MUST surface reject_code=generic_tag_disallowed.",
+  "input": { "tag": { "number": 100, "value": { "uint": 1 } } },
+  "expected_reject_code": "generic_tag_disallowed",
+  "forward_compatibility": true,
+  "notes": "Rust oracle today: returns pass with output_hex=d864 01 (tag 100, content uint 1). The adapter reports result=unimplemented to reflect that the Rust oracle does not yet enforce R7 — the case is present for forward-compatibility documentation. Adapters implementing the allowlist surface result=pass with reject_code=generic_tag_disallowed."
+}

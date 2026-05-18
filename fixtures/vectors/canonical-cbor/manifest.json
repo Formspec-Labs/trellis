@@ -1,0 +1,40 @@
+{
+  "version": "1",
+  "profile": "canonical-cbor-§4.2.2",
+  "authority": "integrity-stack/crates/integrity-cbor/src/lib.rs::encode_canonical_cbor_value",
+  "generated_by": "trellis/fixtures/vectors/_generator/gen_canonical_cbor_profile.py",
+  "regenerator": "trellis/crates/trellis-conformance/examples/canonical_cbor_emit.rs",
+  "reject_code_set": [
+    "duplicate_map_key",
+    "non_finite_float",
+    "negative_zero_float",
+    "indefinite_length_input",
+    "generic_tag_disallowed"
+  ],
+  "cases": [
+    { "case_id": "R1-uint-0",                  "file": "cases/R1-uint-0.json",                  "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R1-uint-23",                 "file": "cases/R1-uint-23.json",                 "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R1-uint-24",                 "file": "cases/R1-uint-24.json",                 "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R1-uint-256",                "file": "cases/R1-uint-256.json",                "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R1-nint-neg1",               "file": "cases/R1-nint-neg1.json",               "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R1-nint-neg25",              "file": "cases/R1-nint-neg25.json",              "rule": "R1", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R2-empty-bstr",              "file": "cases/R2-empty-bstr.json",              "rule": "R2", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R2-empty-tstr",              "file": "cases/R2-empty-tstr.json",              "rule": "R2", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R2-empty-array",             "file": "cases/R2-empty-array.json",             "rule": "R2", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R2-empty-map",               "file": "cases/R2-empty-map.json",               "rule": "R2", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R2-indefinite-length-input", "file": "cases/R2-indefinite-length-input.json", "rule": "R2", "kind": "reject", "forward_compatibility": true  },
+    { "case_id": "R3-single-text-key-map",     "file": "cases/R3-single-text-key-map.json",     "rule": "R3", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R3-nested-map-sort",         "file": "cases/R3-nested-map-sort.json",         "rule": "R3", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R3-mixed-key-disagreement",  "file": "cases/R3-mixed-key-disagreement.json",  "rule": "R3", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R3-tied-length-int-vs-tstr", "file": "cases/R3-tied-length-int-vs-tstr.json", "rule": "R3", "kind": "encode", "forward_compatibility": false },
+    { "case_id": "R4-duplicate-root-key",      "file": "cases/R4-duplicate-root-key.json",      "rule": "R4", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R4-duplicate-nested-key",    "file": "cases/R4-duplicate-nested-key.json",    "rule": "R4", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R5-positive-zero",           "file": "cases/R5-positive-zero.json",           "rule": "R5", "kind": "encode", "forward_compatibility": true  },
+    { "case_id": "R5-nan",                     "file": "cases/R5-nan.json",                     "rule": "R5", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R5-positive-infinity",       "file": "cases/R5-positive-infinity.json",       "rule": "R5", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R5-negative-infinity",       "file": "cases/R5-negative-infinity.json",       "rule": "R5", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R5-negative-zero",           "file": "cases/R5-negative-zero.json",           "rule": "R5", "kind": "reject", "forward_compatibility": false },
+    { "case_id": "R6-float-f16-representable", "file": "cases/R6-float-f16-representable.json", "rule": "R6", "kind": "encode", "forward_compatibility": true  },
+    { "case_id": "R7-generic-tag-disallowed",  "file": "cases/R7-generic-tag-disallowed.json",  "rule": "R7", "kind": "reject", "forward_compatibility": true  }
+  ]
+}

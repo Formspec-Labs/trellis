@@ -1,0 +1,9 @@
+{
+  "case_id": "R2-empty-map",
+  "rule": "R2",
+  "kind": "encode",
+  "summary": "Empty map — definite-length zero-entry container.",
+  "input": { "map": [] },
+  "expected_output_hex": "a0",
+  "forward_compatibility": false
+}

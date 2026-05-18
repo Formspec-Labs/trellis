@@ -1,0 +1,9 @@
+{
+  "case_id": "R1-uint-24",
+  "rule": "R1",
+  "kind": "encode",
+  "summary": "Unsigned integer 24 — first value requiring a 1-byte argument (additional info 24).",
+  "input": { "uint": 24 },
+  "expected_output_hex": "1818",
+  "forward_compatibility": false
+}

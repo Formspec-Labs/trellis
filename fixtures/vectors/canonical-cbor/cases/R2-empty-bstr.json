@@ -1,0 +1,9 @@
+{
+  "case_id": "R2-empty-bstr",
+  "rule": "R2",
+  "kind": "encode",
+  "summary": "Empty byte string — definite-length zero-byte content.",
+  "input": { "bstr_hex": "" },
+  "expected_output_hex": "40",
+  "forward_compatibility": false
+}

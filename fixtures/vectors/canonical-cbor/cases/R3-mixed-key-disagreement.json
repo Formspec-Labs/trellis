@@ -1,0 +1,15 @@
+{
+  "case_id": "R3-mixed-key-disagreement",
+  "rule": "R3",
+  "kind": "encode",
+  "summary": "LOAD-BEARING: §4.2.2 vs §4.2.1 distinguishing case. Mixed-type keyset where bytewise-on-encoded-key-bytes (§4.2.2) produces a different sort than length-first (§4.2.1). Profile spec Example 3 / V10.",
+  "input": {
+    "map": [
+      { "key": { "uint": 100 }, "value": { "tstr": "a" } },
+      { "key": { "tstr": "" }, "value": { "tstr": "b" } }
+    ]
+  },
+  "expected_output_hex": "a218646161606162",
+  "forward_compatibility": false,
+  "notes": "Under §4.2.2: int key 100 encodes as 18 64 (2 bytes), empty tstr as 60 (1 byte). Bytewise compare 0x18 vs 0x60 — int sorts first. Under §4.2.1 (length-first, NON-CONFORMANT): empty tstr (1 byte) sorts first, giving a26060 6162 18 64 6161 — the opposite order. Any runtime claiming §4.2.2 conformance MUST pass this case."
+}

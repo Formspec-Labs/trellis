@@ -1,0 +1,9 @@
+{
+  "case_id": "R1-uint-0",
+  "rule": "R1",
+  "kind": "encode",
+  "summary": "Unsigned integer 0 encodes in initial byte only (smallest form).",
+  "input": { "uint": 0 },
+  "expected_output_hex": "00",
+  "forward_compatibility": false
+}

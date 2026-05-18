@@ -1,0 +1,14 @@
+{
+  "case_id": "R4-duplicate-root-key",
+  "rule": "R4",
+  "kind": "reject",
+  "summary": "Root map contains two entries with byte-identical canonical key encodings ('a', 'a') — R4 requires rejection at the encoder boundary.",
+  "input": {
+    "map": [
+      { "key": { "tstr": "a" }, "value": { "uint": 1 } },
+      { "key": { "tstr": "a" }, "value": { "uint": 2 } }
+    ]
+  },
+  "expected_reject_code": "duplicate_map_key",
+  "forward_compatibility": false
+}

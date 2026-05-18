@@ -1,0 +1,10 @@
+{
+  "case_id": "R5-positive-zero",
+  "rule": "R5",
+  "kind": "encode",
+  "summary": "Positive zero float — admitted by R5. Note: the Rust oracle currently emits f64 (8-byte) representation because R6 float compaction is inert (see profile §2 R6). A conformant runtime that implements R6 MAY emit the smallest-width zero (f16: f9 0000); this case asserts the Rust oracle's current f64 output and is marked forward_compatibility because R6-compliant runtimes will diverge here.",
+  "input": { "float": 0.0 },
+  "expected_output_hex": "fb0000000000000000",
+  "forward_compatibility": true,
+  "notes": "Rust oracle today: f64 = fb 00 00 00 00 00 00 00 00. R6-compliant runtime: f9 0000 (f16 zero). The parity gate treats result=unimplemented as acceptable for forward_compatibility cases; runtimes that emit the f16 form should mark this case as 'pass' if the manifest schema evolves to accept multiple expected outputs, OR re-emit as result=unimplemented while R6 enforcement is pending across the matrix."
+}

@@ -1,0 +1,21 @@
+{
+  "case_id": "R3-nested-map-sort",
+  "rule": "R3",
+  "kind": "encode",
+  "summary": "Nested map with inner keys provided out of order — emitter MUST recursively sort inner map ('a' before 'z').",
+  "input": {
+    "map": [
+      {
+        "key": { "tstr": "outer" },
+        "value": {
+          "map": [
+            { "key": { "tstr": "z" }, "value": { "uint": 1 } },
+            { "key": { "tstr": "a" }, "value": { "uint": 2 } }
+          ]
+        }
+      }
+    ]
+  },
+  "expected_output_hex": "a1656f75746572a2616102617a01",
+  "forward_compatibility": false
+}

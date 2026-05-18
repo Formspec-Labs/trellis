@@ -1,0 +1,9 @@
+{
+  "case_id": "R5-negative-zero",
+  "rule": "R5",
+  "kind": "reject",
+  "summary": "-0.0 — rejected at the canonical emission boundary (R5). The canonical zero is +0.0.",
+  "input": { "float_special": "negative_zero" },
+  "expected_reject_code": "negative_zero_float",
+  "forward_compatibility": false
+}

@@ -1,0 +1,10 @@
+{
+  "case_id": "R2-indefinite-length-input",
+  "rule": "R2",
+  "kind": "reject",
+  "summary": "Pre-encoded CBOR bytes for an indefinite-length array (0x9f 01 02 0xff = indefinite array [1, 2]). Under R2 (parse-side defense-in-depth, forward-compatibility), a conformant decoder SHOULD reject indefinite-length input with reject_code=indefinite_length_input. The Rust oracle today does not implement this guard (ciborium accepts indefinite-length input on parse; emission-side R2 is enforced by construction).",
+  "input": { "bytes_hex": "9f0102ff" },
+  "expected_reject_code": "indefinite_length_input",
+  "forward_compatibility": true,
+  "notes": "Rust oracle behavior today: decode succeeds, re-encoding via encode_canonical_cbor_value yields the definite-length form (82 01 02). The adapter reports result=unimplemented because the Rust oracle does not surface the indefinite_length_input reject code. This case documents the forward-compatibility commitment for external implementers (see profile §2 R2 Status)."
+}

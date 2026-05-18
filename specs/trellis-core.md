@@ -1246,7 +1246,7 @@ A Phase 1 verifier MUST NOT perform a live registry lookup to interpret an event
 
 A package MAY reference external anchoring (transparency log URL, Bitcoin block anchor, RFC 3161 TSA receipt). Such references MUST be marked explicitly as optional external proof material in the manifest and MUST NOT be required for baseline Phase 1 verification. A Phase 1 verifier that the package's signed tree head and consistency-proof material verify MUST return "verified" even if the external anchor cannot be fetched. Phase 4 deployments MAY register a deployment class that elevates external anchoring to required; absent such a class, anchoring is additive.
 
-**AnchorAdapter extension point (informative).** The wire shape of `ExternalAnchor` is defined in Appendix A §28; production of external anchor evidence is a per-deployment adapter concern, not a Core byte protocol. The end-state design pins an `AnchorAdapter` trait at the center-crate boundary so adopters can plug in OpenTimestamps, Sigstore Rekor, Trillian, or another anchoring substrate without changing center-crate code. The trait is **not yet shipped** in `trellis/crates/` — design context lives in `thoughts/specs/2026-04-24-anchor-substrate-spike.md` (normative-adjacent until a Core/Companion ADR promotes a specific adapter contract). The Phase-1 reference server passes `external_anchors: Vec::new()`; no runtime consumer exists today. This note pins the extension-point intent so future spec readers know where anchoring belongs when the first consumer arrives.
+**AnchorAdapter extension point (informative).** The wire shape of `ExternalAnchor` is defined in Appendix A §28; production of external anchor evidence is a per-deployment adapter concern, not a Core byte protocol. An `AnchorAdapter` trait at the center-crate boundary is the intended long-term shape so adopters can plug in OpenTimestamps, Sigstore Rekor, Trillian, RFC 3161 TSA, or another anchoring substrate without changing center-crate code. The trait is formally deferred — see ADR 0015 (`thoughts/adr/0015-anchor-adapter-deferred.md`) for the deferral rationale and the five variation axes (submit vs. verify, online vs. offline, public vs. private log, embedded vs. fetched proof material, normalized vs. provider-specific outcome) that a concrete consumer must fix before the trait can be designed without speculation. Design context and adapter-candidate analysis live in `thoughts/specs/2026-04-24-anchor-substrate-spike.md`. The Phase-1 reference server passes `external_anchors: Vec::new()`; no runtime consumer exists today.
 
 ### 16.4 Omitted-payload honesty
 
@@ -1636,7 +1636,8 @@ exists only for backwards compatibility with pre-G2 exports written at
 `seal_version = 1` before the extension was registered. The branch is the
 single statement `let Some(extension) = extension else { return Ok(()) };`
 inside `verify_seal_fence_extension`. The predicate string is the load-bearing
-deletion target — pin by `rg 'let Some(extension) = extension else'` against
+deletion target — pin by `rg -F 'let Some(extension) = extension else'` (`-F`
+is required; the literal parentheses are regex capture groups without it) against
 `integrity-stack/crates/integrity-verify/src/trellis/`, not by line number;
 file rewrites and refactors that preserve the absence-handling behavior MUST
 preserve this exact predicate so a future v2 commit can grep it and remove it.

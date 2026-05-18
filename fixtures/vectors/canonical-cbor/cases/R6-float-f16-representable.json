@@ -1,0 +1,9 @@
+{
+  "case_id": "R6-float-f16-representable",
+  "rule": "R6",
+  "kind": "encode",
+  "summary": "Float value 1.5 — exactly representable as IEEE-754 f16. Under R6 (forward-compatibility), a conformant emitter MUST emit the 2-byte f16 form (major type 7, additional info 25). The Rust oracle today does not implement R6 and passes the value through to ciborium, which emits 8-byte f64. This case is marked forward_compatibility=true; the Rust adapter returns result=unimplemented.",
+  "input": { "float": 1.5 },
+  "forward_compatibility": true,
+  "notes": "R6 expected output for a conformant runtime: f9 3e00 (f16 1.5). Rust oracle today emits fb 3ff8000000000000 (f64). Because R6 is documented as inert in the profile (§2 R6 Status), no expected_output_hex is claimed here; the adapter reports result=unimplemented. A future regeneration after R6 lands in integrity-cbor will populate expected_output_hex with f93e00."
+}

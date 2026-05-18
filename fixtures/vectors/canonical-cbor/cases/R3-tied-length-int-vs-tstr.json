@@ -1,0 +1,14 @@
+{
+  "case_id": "R3-tied-length-int-vs-tstr",
+  "rule": "R3",
+  "kind": "encode",
+  "summary": "Both keys encode to 1 byte (int 0 = 0x00, empty tstr = 0x60). Bytewise: 0x00 < 0x60 — integer key sorts first. Under §4.2.1 length-first the lengths tie and tie-break is bytewise, so this case alone does NOT distinguish the profiles — paired with R3-mixed-key-disagreement it exercises the same map for §4.2.2 sort.",
+  "input": {
+    "map": [
+      { "key": { "tstr": "" }, "value": { "uint": 2 } },
+      { "key": { "uint": 0 }, "value": { "uint": 1 } }
+    ]
+  },
+  "expected_output_hex": "a200016002",
+  "forward_compatibility": false
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "R1-uint-256",
+  "rule": "R1",
+  "kind": "encode",
+  "summary": "Unsigned integer 256 — first value requiring a 2-byte argument (additional info 25).",
+  "input": { "uint": 256 },
+  "expected_output_hex": "190100",
+  "forward_compatibility": false
+}

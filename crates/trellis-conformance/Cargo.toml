@@ -8,8 +8,16 @@ license.workspace = true
 trellis-core = { path = "../trellis-core" }
 trellis-store-memory = { path = "../trellis-store-memory" }
 
+# Runtime-port adapter for the §4.2.2 conformance corpus at
+# fixtures/vectors/canonical-cbor/. Invoked via
+# `cargo run --example canonical_cbor_emit`.
+[[example]]
+name = "canonical_cbor_emit"
+path = "examples/canonical_cbor_emit.rs"
+
 [dev-dependencies]
 integrity-bundle-fixtures = { path = "../../../integrity-stack/crates/integrity-bundle-fixtures" }
+integrity-cbor = { path = "../../../integrity-stack/crates/integrity-cbor" }
 integrity-cose = { path = "../../../integrity-stack/crates/integrity-cose" }
 ciborium = "0.2"
 proptest = "1.6"

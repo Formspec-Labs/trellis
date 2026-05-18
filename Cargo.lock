@@ -3497,6 +3497,7 @@ dependencies = [
  "ciborium",
  "integrity-bundle",
  "integrity-bundle-fixtures",
+ "integrity-cbor",
  "integrity-cose",
  "integrity-verify",
  "proptest",

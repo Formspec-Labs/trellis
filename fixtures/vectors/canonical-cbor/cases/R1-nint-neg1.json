@@ -1,0 +1,9 @@
+{
+  "case_id": "R1-nint-neg1",
+  "rule": "R1",
+  "kind": "encode",
+  "summary": "Negative integer -1 — encodes as major type 1 with argument 0 in the initial byte.",
+  "input": { "nint": -1 },
+  "expected_output_hex": "20",
+  "forward_compatibility": false
+}

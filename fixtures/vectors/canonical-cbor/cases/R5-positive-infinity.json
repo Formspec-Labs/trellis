@@ -1,0 +1,9 @@
+{
+  "case_id": "R5-positive-infinity",
+  "rule": "R5",
+  "kind": "reject",
+  "summary": "+Inf — rejected at the canonical emission boundary (R5).",
+  "input": { "float_special": "+inf" },
+  "expected_reject_code": "non_finite_float",
+  "forward_compatibility": false
+}

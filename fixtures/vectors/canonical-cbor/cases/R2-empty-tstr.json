@@ -1,0 +1,9 @@
+{
+  "case_id": "R2-empty-tstr",
+  "rule": "R2",
+  "kind": "encode",
+  "summary": "Empty text string — definite-length zero-byte content.",
+  "input": { "tstr": "" },
+  "expected_output_hex": "60",
+  "forward_compatibility": false
+}

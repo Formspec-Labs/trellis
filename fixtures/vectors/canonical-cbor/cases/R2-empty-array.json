@@ -1,0 +1,9 @@
+{
+  "case_id": "R2-empty-array",
+  "rule": "R2",
+  "kind": "encode",
+  "summary": "Empty array — definite-length zero-element container.",
+  "input": { "array": [] },
+  "expected_output_hex": "80",
+  "forward_compatibility": false
+}

@@ -1,0 +1,9 @@
+{
+  "case_id": "R3-single-text-key-map",
+  "rule": "R3",
+  "kind": "encode",
+  "summary": "Single-entry text-key map — exercises map header, key encoding, and value encoding.",
+  "input": { "map": [{ "key": { "tstr": "a" }, "value": { "uint": 1 } }] },
+  "expected_output_hex": "a1616101",
+  "forward_compatibility": false
+}
