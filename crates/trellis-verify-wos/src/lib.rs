@@ -32,6 +32,7 @@ pub use findings::{
     WosDomainReport, WosFinding, WosLayeredVerificationReport, WosRelyingPartyVerdict,
     WosVerificationReport,
 };
+pub use signed_acts::{derive_signed_acts_manifest_v1, encode_signed_acts_manifest_v1};
 pub use validator::WosRecordValidator;
 
 /// Verifies a Trellis export ZIP using structural Trellis checks plus WOS-domain validation.

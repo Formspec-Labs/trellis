@@ -229,6 +229,61 @@ fn parse_signed_acts_export_extension(bytes: &[u8]) -> Result<SignedActsExportEx
     })
 }
 
+/// Builds the v1 signed-acts manifest tuples from `events`.
+///
+/// Walks `events`, selects each `signature_affirmation` and `signature_admission_failed`
+/// event, and emits a `(canonical_event_hash, event_type)` pair per match. The result is
+/// sorted byte-deterministically by `(hash bytes ASC, event_type ASC)` so Rust and Python
+/// derivations produce identical output (parity gate landed in Task A9).
+///
+/// Tuple shape matches the future `068-signed-acts-manifest.cbor` export member registered
+/// by Task A1's §6.7 extension. The encoder is [`encode_signed_acts_manifest_v1`].
+///
+/// # Errors
+/// Currently infallible (the `Result` keeps the signature consistent with the
+/// `SignedActsDeriver` family for future validation rules that may reject malformed input).
+pub fn derive_signed_acts_manifest_v1(
+    events: &[DomainEvent],
+) -> Result<Vec<(Vec<u8>, String)>, String> {
+    let mut entries: Vec<(Vec<u8>, String)> = events
+        .iter()
+        .filter(|event| {
+            event.event_type == wos_signature_affirmation_event_type()
+                || event.event_type == wos_signature_admission_failed_event_type()
+        })
+        .map(|event| (event.canonical_event_hash.to_vec(), event.event_type.clone()))
+        .collect();
+    entries.sort();
+    Ok(entries)
+}
+
+/// Canonical-CBOR encodes a signed-acts manifest into its `068-signed-acts-manifest.cbor` byte form.
+///
+/// Layout: a CBOR array with one element per manifest tuple, each element a 2-element
+/// CBOR array `[bstr(hash), tstr(event_type)]`. Encoding routes through
+/// [`encode_canonical_cbor_value`] so output matches the Trellis §4.2.2 canonical CBOR
+/// profile (ADR 0004 — Rust is byte authority).
+///
+/// # Errors
+/// Returns an error string when the underlying canonical CBOR encoder fails (e.g. a tuple
+/// element cannot be serialized).
+pub fn encode_signed_acts_manifest_v1(
+    manifest: &[(Vec<u8>, String)],
+) -> Result<Vec<u8>, String> {
+    let array = Value::Array(
+        manifest
+            .iter()
+            .map(|(hash, event_type)| {
+                Value::Array(vec![
+                    Value::Bytes(hash.clone()),
+                    Value::Text(event_type.clone()),
+                ])
+            })
+            .collect(),
+    );
+    encode_value(&array)
+}
+
 fn derive_signed_acts_catalog_v1(events: &[DomainEvent]) -> Result<Vec<u8>, String> {
     derive_signed_acts_catalog_with_rule(events, SIGNED_ACTS_DERIVATION_RULE_V1, false)
 }
@@ -1436,5 +1491,161 @@ mod tests {
             ),
         ])
         .expect("payload")
+    }
+
+    fn signature_admission_failed_event(source_byte: u8) -> DomainEvent {
+        // Manifest derivation does not parse the payload — only event_type and
+        // canonical_event_hash matter, so the payload can be `None`.
+        DomainEvent {
+            event_type: wos_signature_admission_failed_event_type().to_string(),
+            payload: None,
+            canonical_event_hash: [source_byte; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        }
+    }
+
+    fn unrelated_event(source_byte: u8) -> DomainEvent {
+        DomainEvent {
+            event_type: "wos.kernel.case_created".to_string(),
+            payload: None,
+            canonical_event_hash: [source_byte; 32],
+            authored_at: TrellisTimestamp {
+                seconds: 1,
+                nanos: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn signed_acts_manifest_empty_events_yields_empty_array() {
+        let manifest = derive_signed_acts_manifest_v1(&[]).expect("derive");
+        assert!(manifest.is_empty());
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+        // CBOR array(0) is a single byte 0x80.
+        assert_eq!(encoded, vec![0x80]);
+    }
+
+    #[test]
+    fn signed_acts_manifest_single_signature_affirmation_is_included() {
+        let event = signature_event_with_signer_and_hash("signer-1", 0x22);
+        let manifest = derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(manifest[0].0, vec![0x22u8; 32]);
+        assert_eq!(manifest[0].1, wos_signature_affirmation_event_type());
+    }
+
+    #[test]
+    fn signed_acts_manifest_single_signature_admission_failed_is_included() {
+        let event = signature_admission_failed_event(0x33);
+        let manifest = derive_signed_acts_manifest_v1(std::slice::from_ref(&event)).expect("derive");
+
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(manifest[0].0, vec![0x33u8; 32]);
+        assert_eq!(manifest[0].1, wos_signature_admission_failed_event_type());
+    }
+
+    #[test]
+    fn signed_acts_manifest_mixed_events_sort_by_hash_then_event_type() {
+        // Hash 0x11 < 0x22, so the admission-failed event (hash 0x11) sorts first
+        // even though its event_type literal sorts after the affirmation literal.
+        let affirmation = signature_event_with_signer_and_hash("signer-1", 0x22);
+        let admission_failed = signature_admission_failed_event(0x11);
+
+        let manifest =
+            derive_signed_acts_manifest_v1(&[affirmation.clone(), admission_failed.clone()])
+                .expect("derive");
+
+        assert_eq!(manifest.len(), 2);
+        assert_eq!(manifest[0].0, vec![0x11u8; 32]);
+        assert_eq!(manifest[0].1, wos_signature_admission_failed_event_type());
+        assert_eq!(manifest[1].0, vec![0x22u8; 32]);
+        assert_eq!(manifest[1].1, wos_signature_affirmation_event_type());
+
+        // Shuffling input order must not affect output order.
+        let reshuffled =
+            derive_signed_acts_manifest_v1(&[admission_failed, affirmation]).expect("derive");
+        assert_eq!(manifest, reshuffled);
+    }
+
+    #[test]
+    fn signed_acts_manifest_same_hash_sorts_by_event_type() {
+        // Both events share canonical_event_hash 0x44; tie breaks on event_type ASC.
+        // "wos.kernel.signature_admission_failed" < "wos.kernel.signature_affirmation"
+        // lexicographically (`_` 0x5f < `f` 0x66 at the diverging byte).
+        let affirmation = signature_event_with_signer_and_hash("signer-1", 0x44);
+        let admission_failed = signature_admission_failed_event(0x44);
+
+        let manifest = derive_signed_acts_manifest_v1(&[affirmation, admission_failed])
+            .expect("derive");
+
+        assert_eq!(manifest.len(), 2);
+        assert_eq!(manifest[0].1, wos_signature_admission_failed_event_type());
+        assert_eq!(manifest[1].1, wos_signature_affirmation_event_type());
+    }
+
+    #[test]
+    fn signed_acts_manifest_encoding_is_input_order_invariant() {
+        let events = [
+            signature_event_with_signer_and_hash("signer-1", 0x22),
+            signature_admission_failed_event(0x11),
+            signature_event_with_signer_and_hash("signer-2", 0x33),
+        ];
+        let permuted = [events[2].clone(), events[0].clone(), events[1].clone()];
+
+        let canonical = encode_signed_acts_manifest_v1(
+            &derive_signed_acts_manifest_v1(&events).expect("derive"),
+        )
+        .expect("encode");
+        let from_permuted = encode_signed_acts_manifest_v1(
+            &derive_signed_acts_manifest_v1(&permuted).expect("derive"),
+        )
+        .expect("encode");
+
+        assert_eq!(canonical, from_permuted);
+    }
+
+    #[test]
+    fn signed_acts_manifest_encoding_matches_canonical_cbor_layout() {
+        // Manually compute the canonical bytes for a one-event manifest:
+        //   hash       = [0x00; 32]
+        //   event_type = wos.kernel.signature_affirmation (32 ASCII bytes)
+        //
+        // Encoding:
+        //   0x81                              -- array(1)
+        //   0x82                              -- array(2)
+        //   0x58 0x20 <32 zero bytes>         -- bstr(32) of zeros
+        //   0x78 0x20 <"wos.kernel.signature_affirmation">
+        //                                     -- tstr(32) one-byte-length form
+        let event_type = wos_signature_affirmation_event_type();
+        assert_eq!(event_type.len(), 32, "event_type literal length pin");
+
+        let mut expected = Vec::with_capacity(1 + 1 + 2 + 32 + 2 + 32);
+        expected.push(0x81);
+        expected.push(0x82);
+        expected.push(0x58);
+        expected.push(0x20);
+        expected.extend_from_slice(&[0u8; 32]);
+        expected.push(0x78);
+        expected.push(0x20);
+        expected.extend_from_slice(event_type.as_bytes());
+
+        let manifest = vec![(vec![0u8; 32], event_type.to_string())];
+        let encoded = encode_signed_acts_manifest_v1(&manifest).expect("encode");
+
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
+    fn signed_acts_manifest_excludes_unrelated_event_types() {
+        let manifest =
+            derive_signed_acts_manifest_v1(&[unrelated_event(0x55)]).expect("derive");
+        assert!(
+            manifest.is_empty(),
+            "non-signed-acts event_types must be excluded: {manifest:?}"
+        );
     }
 }
