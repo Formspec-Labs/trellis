@@ -148,29 +148,38 @@ Full fixture corpus vectors live in `trellis/fixtures/vectors/canonical-cbor/` (
 
 ### Conformant
 
-**Example 1: text-key map with bytewise sort.**
+**Example 1: text-key map with bytewise sort (text-only — both profiles agree by coincidence).**
 
-Input: `{"b": 2, "aa": 1}`. Key `"b"` encodes as `61 62` (text, len 1, byte `0x62`). Key `"aa"` encodes as `62 61 61` (text, len 2, bytes `0x61 0x61`). Bytewise: `61 62` vs `62 61 61` — first byte `0x61` < `0x62`, so `"aa"` sorts first.
+Input: `{"b": 2, "aa": 1}`. Key `"b"` encodes as `61 62` (major-type-tstr byte `0x61`, then `'b'` = `0x62`). Key `"aa"` encodes as `62 61 61` (major-type-tstr byte `0x62`, then `'a' 'a'`). Bytewise compare first bytes: `0x61` < `0x62`, so `"b"` sorts first.
 
-Output: `a2 62 61 61 01 61 62 02` — `"aa": 1, "b": 2`.
+Output: `a2 61 62 02 62 61 61 01` — `"b": 2, "aa": 1`.
 
-Under §4.2.1 (length-first): `"b"` (length 1) before `"aa"` (length 2) — opposite order. This is the test case that distinguishes the two profiles for text-only-key maps.
+Under §4.2.1 (length-first): `"b"` (1-byte content) before `"aa"` (2-byte content) — same order. For text-only keysets the two profiles often produce the same sort by coincidence, because the major-type-byte's lower nibble encodes string length and participates in the bytewise comparison. **This example does not distinguish §4.2.2 from §4.2.1.** Example 3 below uses a mixed-type keyset where they diverge.
 
 **Example 2: integer smallest-form encoding.**
 
 Input: integer `255`. Encoded as `18 ff` (2 bytes: major type 0, additional info 24, argument `0xff`). NOT as `19 00 ff` (3 bytes with 2-byte argument) which would be non-canonical padding.
 
+**Example 3: mixed-type keyset where §4.2.2 and §4.2.1 diverge (load-bearing distinguishing case).**
+
+Input: `{100: "a", "": "b"}`. Key `100` encodes as `18 64` (major-type-uint, additional-info 24, argument `0x64` = 2 bytes total). Key `""` encodes as `60` (major-type-tstr length 0 — 1 byte total).
+
+- §4.2.2 bytewise on encoded keys: compare `18 64` vs `60` — first byte `0x18` < `0x60`, so int key `100` sorts first. Output: `a2 18 64 61 61 60 61 62` — `100: "a", "": "b"`.
+- §4.2.1 length-first: 1-byte key (`""`) before 2-byte key (`100`) — opposite order. Output: `a2 60 61 62 18 64 61 61` — `"": "b", 100: "a"`. **Non-conformant under this profile.**
+
+This is the test case implementations MUST run to confirm §4.2.2 conformance — text-only-key maps will pass under either profile.
+
 ### Non-conformant
 
-**Example 3: §4.2.1 length-first sort (wrong profile).**
+**Example 4: §4.2.1 length-first sort applied to the mixed-type case from Example 3.**
 
-Input: `{"b": 2, "aa": 1}` encoded with §4.2.1 sort: `a2 61 62 02 62 61 61 01` (`"b": 2, "aa": 1`). This is NOT conformant under this profile. `cbor2.dumps(canonical=True)` in Python produces this output.
+Output: `a2 60 61 62 18 64 61 61`. This is what `cbor2.dumps(canonical=True)` in Python produces for the input above. It is NOT conformant under this profile.
 
-**Example 4: indefinite-length array.**
+**Example 5: indefinite-length array.**
 
 `9f 01 02 ff` (indefinite-length array `[1, 2]`). Non-conformant on the emission side. A conformant emitter produces `82 01 02` (definite-length 2-element array).
 
-**Example 5: NaN float.**
+**Example 6: NaN float.**
 
 Any encoding of IEEE-754 NaN is non-conformant. `encode_canonical_cbor_value` returns an error before producing output.
 
