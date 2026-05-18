@@ -6,7 +6,8 @@ Mirrors Rust `validate_signed_acts_manifest_extension` at
 Covers the four-way present/absent extension/member dispatch and the bound
 validation path (digest mismatch and end-to-end happy path via the fixture
 corpus). The cross-runtime byte-identity assertion lives in
-`trellis/scripts/check_signed_acts_projection_parity.py` (Task A9).
+`trellis/scripts/check_cross_runtime_parity.py` (signed-acts-projection gate;
+formerly `check_signed_acts_projection_parity.py`, renamed in preflight Task A2).
 """
 
 from __future__ import annotations

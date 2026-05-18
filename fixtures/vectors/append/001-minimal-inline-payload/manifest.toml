@@ -21,6 +21,7 @@ tr_core = [
     "TR-CORE-030",  # inv #1, #4 — dCBOR encoding + canonical event hash construction
     "TR-CORE-031",  # inv #4 — content_hash computed over ciphertext bytes
     "TR-CORE-032",  # inv #1 — Phase 1 canonical encoding is dCBOR + SHA-256 hash preimages
+    "TR-CORE-179",  # inv #1 — §4.2.2 profile R1 (int smallest-form), R2 (definite-length), R3 (key sort) exercised by every canonical-event-hash preimage; standalone R1–R7 corpus lives at `fixtures/vectors/canonical-cbor/`
     "TR-CORE-035",  # inv #2 — suite_id=1 (Ed25519/COSE_Sign1) in protected header
     "TR-CORE-040",  # (no invariant tag) — object distinction among fact/record/attestation/derived/export surfaces
     "TR-CORE-042",  # (no invariant tag) — fact becomes canonical only after durable-append boundary

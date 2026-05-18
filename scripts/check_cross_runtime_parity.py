@@ -1,16 +1,36 @@
 #!/usr/bin/env python3
-"""Regression guard for SignedAct projection corpus parity.
+"""Cross-runtime parity gate. Permanent CI invariant.
 
-The WOS/Formspec signature export generator is the Python oracle for the
-projection fixture bytes. This check regenerates its output into a temp tree,
-compares every generated binary artifact with the committed corpus, and runs
-the Python WOS verifier over the signed-acts positive and negative vectors.
-Rust consumes the same corpus through `cargo nextest run -p trellis-verify-wos`.
+Runs three named gates in sequence and reports a structured failure block
+on disagreement. The gates cover the substrate's three byte-identity surfaces:
+
+1. `generic-cbor-profile` — every R1–R7 case in
+   `fixtures/vectors/canonical-cbor/manifest.json` agrees with the Rust oracle
+   (`integrity-cbor::encode_canonical_cbor_value`) via the
+   `canonical_cbor_emit` cargo example. Drives the
+   `gen_canonical_cbor_profile.py` orchestrator in verify-only mode.
+2. `signed-acts-projection` — the Python WOS/Formspec signature export
+   generator regenerates every signed-acts vector into a temp tree, and
+   each generated binary is byte-compared against the committed corpus.
+   The Python WOS verifier then runs over the signed-acts positive and
+   negative vectors; failure kinds and verdicts MUST match. Rust consumes
+   the same corpus through `cargo nextest run -p trellis-verify-wos`.
+3. `seal-fence` — Python `verify_seal_fence_extension` (Task C2) produces
+   the same outcome as Rust `verify_seal_fence_extension`
+   (`integrity-stack/crates/integrity-verify/src/trellis/export.rs:996`)
+   across every committed export fixture, against synthetic seal-fence
+   extensions built from each fixture's archive members, including every
+   Rust `SealFenceTamper` variant (`export.rs:1153`).
+
+Failure output names: gate, case id / vector id, rule (R1–R7 when
+applicable), runtime + library, expected hex / reject code, actual,
+and the exact shell command to reproduce.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +40,9 @@ sys.path.insert(0, str(ROOT / "trellis-py" / "src"))
 
 GENERATOR = ROOT / "fixtures" / "vectors" / "_generator" / "gen_signature_export_006.py"
 VECTORS = ROOT / "fixtures" / "vectors"
+CANONICAL_CBOR_GENERATOR = (
+    ROOT / "fixtures" / "vectors" / "_generator" / "gen_canonical_cbor_profile.py"
+)
 AUTHORING_FILES = {"manifest.toml", "derivation.md"}
 GENERATED_DIRS = [
     ("export", "006-signature-affirmations-inline"),
@@ -413,6 +436,269 @@ def check_cross_runtime_seal_fence_parity() -> None:
                 )
 
 
+# --------------------------------------------------------------------------
+# Gate runner — structured failure output
+# --------------------------------------------------------------------------
+
+GATES_ORDER = ("generic-cbor-profile", "signed-acts-projection", "seal-fence")
+
+
+def _print_gate_header(gate: str) -> None:
+    print(f"[{gate}] running…", file=sys.stderr)
+
+
+def _print_gate_pass(gate: str, detail: str) -> None:
+    print(f"[{gate}] PASS — {detail}", file=sys.stderr)
+
+
+def _print_failure_block(
+    *,
+    gate: str,
+    case_id: str,
+    rule: str | None,
+    runtime: str,
+    expected: str,
+    actual: str,
+    command: str,
+    note: str | None = None,
+) -> None:
+    """Structured failure block. Mirrors the failure framing required by the
+    A2 task: gate, case id / vector id, rule (R1–R7 when applicable), runtime
+    + version, expected hex / reject code, actual hex / reject code, and the
+    exact shell command for human reproduction.
+    """
+    print(f"[{gate}] FAIL", file=sys.stderr)
+    print(f"  case_id:  {case_id}", file=sys.stderr)
+    if rule:
+        print(f"  rule:     {rule}", file=sys.stderr)
+    print(f"  runtime:  {runtime}", file=sys.stderr)
+    print(f"  expected: {expected}", file=sys.stderr)
+    print(f"  actual:   {actual}", file=sys.stderr)
+    print(f"  command:  {command}", file=sys.stderr)
+    if note:
+        print(f"  note:     {note}", file=sys.stderr)
+    print(file=sys.stderr)
+
+
+# --------------------------------------------------------------------------
+# Gate 1: generic-cbor-profile
+# --------------------------------------------------------------------------
+
+def run_generic_cbor_profile_gate() -> bool:
+    """Drive `gen_canonical_cbor_profile.py` in verify-only mode (no
+    `--write`) — it shells into the Rust adapter
+    (`cargo run -q --example canonical_cbor_emit -- --manifest …`),
+    diffs every case against the committed `expected_output_hex` /
+    `expected_reject_code`, and exits non-zero on disagreement.
+
+    Forward-compatibility cases (`forward_compatibility: true` in the
+    manifest) are handled by the orchestrator: it accepts
+    `result=unimplemented` from the Rust oracle. A runtime that has
+    implemented the rule emits the rule-correct output and the
+    orchestrator falls through to the same byte / reject-code check.
+
+    Structured failure output from the orchestrator already names case_id,
+    expected, actual, and the reproducer command. This wrapper preserves
+    that block under the gate banner and adds the runtime tag.
+    """
+    _print_gate_header("generic-cbor-profile")
+
+    if not CANONICAL_CBOR_GENERATOR.is_file():
+        print(
+            f"[generic-cbor-profile] FAIL — generator missing at {CANONICAL_CBOR_GENERATOR}",
+            file=sys.stderr,
+        )
+        return False
+
+    command = [sys.executable, str(CANONICAL_CBOR_GENERATOR)]
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if result.returncode == 0:
+        # The orchestrator already prints a concise pass line; just tag the gate.
+        if result.stdout.strip():
+            print(result.stdout.rstrip(), file=sys.stderr)
+        _print_gate_pass(
+            "generic-cbor-profile",
+            "manifest.json cases agree with Rust oracle (integrity-cbor)",
+        )
+        return True
+
+    # The orchestrator's own failure block already carries case_id /
+    # expected / actual / reproducer command (see
+    # `_generator/gen_canonical_cbor_profile.py`). Surface it under the
+    # gate banner so the framing is uniform with the other gates.
+    if result.stdout.strip():
+        print(result.stdout.rstrip(), file=sys.stderr)
+    if result.stderr.strip():
+        print(result.stderr.rstrip(), file=sys.stderr)
+    print(
+        f"[generic-cbor-profile] FAIL — runtime=Rust integrity-cbor (oracle); "
+        f"reproduce: (cd {ROOT}; python3 fixtures/vectors/_generator/gen_canonical_cbor_profile.py)",
+        file=sys.stderr,
+    )
+    return False
+
+
+# --------------------------------------------------------------------------
+# Gate 2: signed-acts-projection
+# --------------------------------------------------------------------------
+
+def run_signed_acts_projection_gate() -> bool:
+    """Preserves the pre-rename behavior byte-for-byte: regenerate the
+    signature-export corpus into a temp tree, byte-compare against the
+    committed corpus, then run the Python WOS verifier over the
+    signed-acts positive and negative vectors and assert the
+    cross-runtime 068 byte-identity invariant.
+    """
+    _print_gate_header("signed-acts-projection")
+    runtime = "Python trellis-py (Signed-Act generator + verifier)"
+
+    if not GENERATOR.is_file():
+        _print_failure_block(
+            gate="signed-acts-projection",
+            case_id="<harness>",
+            rule=None,
+            runtime=runtime,
+            expected="generator present",
+            actual=f"missing at {GENERATOR}",
+            command=f"ls {GENERATOR}",
+        )
+        return False
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp_str:
+            tmp = Path(tmp_str)
+            run_generator(tmp)
+            if not compare_generated_tree(tmp):
+                _print_failure_block(
+                    gate="signed-acts-projection",
+                    case_id="<corpus byte-identity>",
+                    rule=None,
+                    runtime=runtime,
+                    expected="generated tree matches committed corpus",
+                    actual="bytes differ (see preceding diagnostics)",
+                    command=(
+                        f"(cd {ROOT} && "
+                        f"python3 scripts/check_cross_runtime_parity.py)"
+                    ),
+                    note=(
+                        "Python signature-export generator output diverged from "
+                        "the committed signed-acts vectors. Either the generator "
+                        "regressed or the corpus needs regeneration."
+                    ),
+                )
+                return False
+    except Exception as exc:  # noqa: BLE001
+        _print_failure_block(
+            gate="signed-acts-projection",
+            case_id="<harness>",
+            rule=None,
+            runtime=runtime,
+            expected="generator runs cleanly",
+            actual=f"exception: {exc!r}",
+            command=(
+                f"(cd {ROOT} && "
+                f"python3 scripts/check_cross_runtime_parity.py)"
+            ),
+        )
+        return False
+
+    try:
+        check_python_verifier_vectors()
+    except AssertionError as exc:
+        _print_failure_block(
+            gate="signed-acts-projection",
+            case_id="<python-verifier-vector>",
+            rule=None,
+            runtime=runtime,
+            expected="Python verifier verdict matches expected per-vector verdict",
+            actual=str(exc),
+            command=(
+                f"(cd {ROOT}/trellis-py && "
+                f"python3 -c 'from trellis_py import verify_wos; "
+                f"print(verify_wos.verify_export_zip(open(VECTOR, \"rb\").read()))')"
+            ),
+            note="See assertion text for the offending fixture path.",
+        )
+        return False
+
+    try:
+        check_cross_runtime_manifest_byte_identity()
+    except AssertionError as exc:
+        _print_failure_block(
+            gate="signed-acts-projection",
+            case_id="<068-signed-acts-manifest.cbor cross-runtime>",
+            rule="R1+R3+R4 (canonical CBOR, applied to signed-acts manifest)",
+            runtime="Python trellis_py.verify_wos.encode_signed_acts_manifest_v1 vs "
+                    "Rust trellis-export-writer (committed bytes)",
+            expected="Python-derived 068 bytes byte-identical to committed Rust output",
+            actual=str(exc),
+            command=(
+                f"(cd {ROOT} && "
+                f"python3 scripts/check_cross_runtime_parity.py)"
+            ),
+            note="Drift here implies canonical-CBOR profile divergence between "
+                 "trellis-py._cbor_canonical and integrity-cbor.",
+        )
+        return False
+
+    _print_gate_pass(
+        "signed-acts-projection",
+        "generator bytes, Python verifier verdicts, and 068 cross-runtime byte-identity all match",
+    )
+    return True
+
+
+# --------------------------------------------------------------------------
+# Gate 3: seal-fence
+# --------------------------------------------------------------------------
+
+def run_seal_fence_gate() -> bool:
+    """Preserves the pre-rename `check_cross_runtime_seal_fence_parity`
+    behavior byte-for-byte: synthesize a seal-fence extension from each
+    committed export fixture's archive members, exercise every Rust
+    `SealFenceTamper` variant, and assert the Python verifier surfaces
+    the expected finding kind for each tamper.
+    """
+    _print_gate_header("seal-fence")
+    runtime = "Python trellis_py.verify_export.verify_seal_fence_extension vs " \
+              "Rust integrity-verify::trellis::export::verify_seal_fence_extension"
+
+    try:
+        check_cross_runtime_seal_fence_parity()
+    except AssertionError as exc:
+        _print_failure_block(
+            gate="seal-fence",
+            case_id="<seal-fence tamper variant>",
+            rule="seal-fence extension parity (Trellis Core §6.7 / export.rs:1153)",
+            runtime=runtime,
+            expected="Python finding kinds match Rust SealFenceTamper variants",
+            actual=str(exc),
+            command=(
+                f"(cd {ROOT} && "
+                f"python3 scripts/check_cross_runtime_parity.py)"
+            ),
+            note="Assertion text names the fixture and tamper variant that diverged.",
+        )
+        return False
+
+    _print_gate_pass(
+        "seal-fence",
+        "Python verifier matches Rust SealFenceTamper coverage across every export fixture",
+    )
+    return True
+
+
+# --------------------------------------------------------------------------
+# Orchestrator
+# --------------------------------------------------------------------------
+
 def main() -> int:
     try:
         import cbor2  # noqa: F401
@@ -425,22 +711,29 @@ def main() -> int:
         )
         return 2
 
-    if not GENERATOR.is_file():
-        print(f"generator not found at {GENERATOR}", file=sys.stderr)
-        return 2
+    gates: list[tuple[str, callable]] = [
+        ("generic-cbor-profile", run_generic_cbor_profile_gate),
+        ("signed-acts-projection", run_signed_acts_projection_gate),
+        ("seal-fence", run_seal_fence_gate),
+    ]
 
-    with tempfile.TemporaryDirectory() as tmp_str:
-        tmp = Path(tmp_str)
-        run_generator(tmp)
-        if not compare_generated_tree(tmp):
-            return 1
+    failures: list[str] = []
+    for name, runner in gates:
+        ok = runner()
+        if not ok:
+            failures.append(name)
 
-    check_python_verifier_vectors()
-    check_cross_runtime_manifest_byte_identity()
-    check_cross_runtime_seal_fence_parity()
+    print(file=sys.stderr)
+    if failures:
+        print(
+            f"cross-runtime parity: {len(failures)} gate(s) failed: {failures}",
+            file=sys.stderr,
+        )
+        return 1
+
     print(
-        "OK: signed-acts projection generator, Python verifier, "
-        "cross-runtime 068 byte-identity, and seal-fence parity all match the corpus"
+        "cross-runtime parity: all three gates pass "
+        "(generic-cbor-profile, signed-acts-projection, seal-fence)"
     )
     return 0
 

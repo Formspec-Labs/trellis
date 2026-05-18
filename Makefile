@@ -59,9 +59,15 @@ test-scripts:
 	# Refactor G-6 slice: Python gen_export_001.py vs committed export/001-two-event-chain (not ratification G-6 spec lint).
 	# Rust writer + verifier legs: trellis-export-writer crate test + trellis-conformance replay — see ratification-checklist.md#gate-label-crosswalk-refactoring-tracker.
 	$(PYTHON) $(SCRIPTS_DIR)/check_export_001_generator_sync.py
-	# SignedAct projection parity: Python generator/verifier vs committed WOS/Formspec export corpus.
-	# Rust consumes the same corpus through test-rust (`trellis-verify-wos` + conformance).
-	$(PYTHON) $(SCRIPTS_DIR)/check_signed_acts_projection_parity.py
+	# Cross-runtime parity: three named gates run in sequence —
+	#   1. generic-cbor-profile  (every R1–R7 case in fixtures/vectors/canonical-cbor/manifest.json
+	#                             vs the Rust oracle integrity-cbor::encode_canonical_cbor_value)
+	#   2. signed-acts-projection (Python signature-export generator + WOS verifier vs the
+	#                              committed corpus; Rust consumes the same corpus through test-rust
+	#                              `trellis-verify-wos` + conformance)
+	#   3. seal-fence             (Python verify_seal_fence_extension vs Rust integrity-verify
+	#                              SealFenceTamper variants over every export fixture)
+	$(PYTHON) $(SCRIPTS_DIR)/check_cross_runtime_parity.py
 
 # Targeted run of the Postgres-side integration suite. `cargo nextest run --workspace`
 # already exercises these — this target exists for fast iteration on the
