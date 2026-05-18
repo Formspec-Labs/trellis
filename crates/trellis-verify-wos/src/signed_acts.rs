@@ -481,8 +481,13 @@ pub fn derive_signed_acts_manifest_v1(
 /// profile (ADR 0004 — Rust is byte authority).
 ///
 /// # Errors
-/// Returns an error string when the underlying canonical CBOR encoder fails (e.g. a tuple
-/// element cannot be serialized).
+/// Returns `Result<_, String>` for forward compatibility; for the current manifest input
+/// shape (`Vec<(Vec<u8>, String)>`), the canonical encoder cannot fail (no floats, no
+/// generic tags, no controlled-key maps). The defensive `Err` arm in the encoder body is
+/// a guard against future preimage shapes that could introduce a CBOR float (R5) or a
+/// generic tag (R7). The `Err` arm is unreachable today; no fixture targets it; no spec
+/// contract assumes it. If a future Trellis preimage introduces such a shape, this
+/// docstring updates in the same commit that introduces it.
 pub fn encode_signed_acts_manifest_v1(
     manifest: &[(Vec<u8>, String)],
 ) -> Result<Vec<u8>, String> {
