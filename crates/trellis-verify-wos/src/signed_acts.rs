@@ -352,7 +352,7 @@ fn validate_signed_acts_catalog_root(value: &Value, derivation_rule: &str) -> Re
             "derivation_rule_id must match manifest derivation_rule {derivation_rule}"
         ));
     }
-    if !map_lookup_value(map, "acts").is_some_and(|acts| acts.as_array().is_some()) {
+    if map_lookup_value(map, "acts").is_none_or(|acts| acts.as_array().is_none()) {
         return Err("acts must be an array".to_string());
     }
     Ok(())

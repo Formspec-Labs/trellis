@@ -1,4 +1,7 @@
 // Rust guideline compliant 2026-02-21
+#![allow(clippy::result_large_err, clippy::collapsible_if)]
+// `StackError` carries operational context callers rely on; boxing it would change every fallible
+// signature in this crate. Follow-up: convert `StackError` to a `Box<...>` newtype workspace-wide.
 //! Trellis substrate HTTP service.
 //!
 //! The service is the composition root between product-facing HTTP append

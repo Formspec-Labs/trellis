@@ -1,4 +1,9 @@
 // Rust guideline compliant 2026-02-21
+#![allow(clippy::result_large_err)]
+// `ServiceClientError` carries operational context (URL, status, body excerpt, source error chain)
+// that callers rely on for retry/dispatch decisions. Boxing the error would change the public
+// signature of every fallible method. Follow-up: convert `ServiceClientError` to a `Box<...>` newtype
+// once a consumer needs the smaller `Result` size (none today; tracked separately).
 //! Shared Trellis service HTTP client contract.
 //!
 //! Applications append to Trellis through this crate instead of each carrying

@@ -1,4 +1,7 @@
 // Rust guideline compliant 2026-02-21
+#![allow(clippy::result_large_err)]
+// `StackError` carries operational context callers rely on; boxing it would change every fallible
+// signature in this crate. Follow-up: convert `StackError` to a `Box<...>` newtype workspace-wide.
 //! WOS-aware ingress admission for Trellis.
 //!
 //! Validates WOS provenance payloads against canonical event literals owned by

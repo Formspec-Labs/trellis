@@ -1,4 +1,9 @@
 // Rust guideline compliant 2026-05-15
+#![allow(clippy::result_large_err, clippy::collapsible_if)]
+// `StackError` carries operational context callers rely on; boxing it would change every fallible
+// signature in this crate. Follow-up: convert `StackError` to a `Box<...>` newtype workspace-wide.
+// `collapsible_if`: nested `if let ... && ...` chains are clearer split for the extension-walking
+// patterns in this crate; collapsing them obscures the optional-extension semantics.
 //! Trellis Phase-1 export writer.
 //!
 //! This crate owns the Core section 18 export-emission orchestration: deterministic bundle
