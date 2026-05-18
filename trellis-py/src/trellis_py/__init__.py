@@ -13,6 +13,10 @@ from trellis_py._cbor_strict import (
 from trellis_py.append import AppendArtifacts, append_event
 from trellis_py.export_zip import ExportEntry, export_to_zip_bytes
 from trellis_py.verify import VerificationReport, verify_export_zip, verify_tampered_ledger
+from trellis_py.verify_wos import (
+    derive_signed_acts_manifest_v1,
+    encode_signed_acts_manifest_v1,
+)
 
 __all__ = [
     "AppendArtifacts",
@@ -29,4 +33,7 @@ __all__ = [
     "encode_canonical_cbor_value",
     "encode_canonical_map_pairs",
     "reject_duplicate_canonical_map_keys",
+    # Signed-acts manifest derivation + canonical encoding (Task A5).
+    "derive_signed_acts_manifest_v1",
+    "encode_signed_acts_manifest_v1",
 ]

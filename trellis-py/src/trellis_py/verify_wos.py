@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import cbor2
 
@@ -616,6 +616,58 @@ def _require_bool(m: dict, key: str, expected: bool) -> None:
     actual = core._map_lookup_bool(m, key)
     if actual != expected:
         raise core.VerifyError(f"{key} must be {expected}")
+
+
+def derive_signed_acts_manifest_v1(
+    events: Iterable[core.EventDetails],
+) -> list[tuple[bytes, str]]:
+    """Walk `events`, select WOS signature_affirmation and signature_admission_failed
+    events, and return a sorted list of `(canonical_event_hash, event_type)` tuples.
+
+    Mirror of Rust `derive_signed_acts_manifest_v1` at
+    `trellis/crates/trellis-verify-wos/src/signed_acts.rs:245`. Sorted by
+    `(hash bytes ASC, event_type ASC)` — Python tuple ordering on `(bytes, str)`
+    matches `entries.sort()` in Rust byte-for-byte.
+
+    Output is the input to :func:`encode_signed_acts_manifest_v1`, which produces
+    the byte form of `068-signed-acts-manifest.cbor` (Task A1).
+    """
+
+    entries: list[tuple[bytes, str]] = [
+        (details.canonical_event_hash, details.event_type)
+        for details in events
+        if details.event_type
+        in (
+            WOS_SIGNATURE_AFFIRMATION_EVENT_TYPE,
+            WOS_SIGNATURE_ADMISSION_FAILED_EVENT_TYPE,
+        )
+    ]
+    entries.sort()
+    return entries
+
+
+def encode_signed_acts_manifest_v1(manifest: list[tuple[bytes, str]]) -> bytes:
+    """Canonical-CBOR encode a signed-acts manifest under §4.2.2.
+
+    Layout: a CBOR array with one element per tuple, each element a 2-element
+    CBOR array `[bstr(hash), tstr(event_type)]`. Routes through
+    :func:`encode_canonical_cbor_value` so the output matches the Trellis §4.2.2
+    canonical CBOR profile and is byte-identical to Rust
+    `encode_signed_acts_manifest_v1` at
+    `trellis/crates/trellis-verify-wos/src/signed_acts.rs:270` (ADR 0004 —
+    Rust is byte authority).
+
+    This MUST NOT use `cbor2.dumps(..., canonical=True)`: cbor2 implements
+    §4.2.1 (length-first sort) rather than §4.2.2 (bytewise sort on encoded
+    key bytes). For a homogeneous bstr/tstr 2-tuple pair the wire bytes happen
+    to coincide, but routing through the canonical encoder keeps the call site
+    aligned with the profile in case future layouts add map nesting.
+    """
+
+    canonical_pairs: list[list[Any]] = [
+        [event_hash, event_type] for event_hash, event_type in manifest
+    ]
+    return encode_canonical_cbor_value(canonical_pairs)
 
 
 def _validate_signed_acts_projection(
