@@ -707,6 +707,32 @@ Trellis Core §17 (Append Idempotency Contract) fixes the **byte-level** contrac
 
 **OC-63 (MUST).** Replica completion state MUST remain operational state, not canonical truth. The presence, absence, or synchronization lag of any individual replica is a derived condition and MUST NOT be treated as modifying canonical facts.
 
+### 18.9 Bundle-Publication Reservation Lifecycle
+
+**OC-63a (SHOULD).** Operators backing the bundle-publication index with a durable store that reserves `(bundle_scope, seal_version)` before artifact writes (the Phase-1 Postgres reference adapter does this via the `trellis_bundle_publications` table with `ON CONFLICT DO NOTHING` on the PK) MUST account for dead reservations: rows where the reservation landed but the artifact-ref population path did not complete (process crash between reservation and ZIP write, network failure mid-upload). A dead reservation is hidden from `get_bundle_publication_by_digest` lookups by design — it does not falsely satisfy reads — but it blocks same-identity retries with different inputs because the PK is already occupied.
+
+**Operational guidance (non-normative).** For Phase-1 single-tenant deployments, manual SQL cleanup is acceptable:
+
+```sql
+-- Identify dead reservations older than 1 hour
+SELECT scope, seal_version, reserved_at
+FROM trellis_bundle_publications
+WHERE artifact_ref IS NULL
+  AND reserved_at < NOW() - INTERVAL '1 hour';
+
+-- Remove a specific dead reservation (operator-judgment; never invoked mid-publish)
+DELETE FROM trellis_bundle_publications
+WHERE scope = '<scope>'
+  AND seal_version = <version>
+  AND artifact_ref IS NULL;
+```
+
+The retention threshold is operator policy; one hour is a reference value, not a normative bound. The cleanup MUST NOT race a legitimate in-flight publish; `reserved_at` aging gives the in-flight path bounded time to complete before its row becomes a janitor candidate.
+
+**Multi-tenant evolution path (informative).** When multi-tenant scale or distributed publication arrives, two approaches are tractable: (a) add a `reserved_at` TTL column plus a periodic janitor task that DELETEs dead reservations under a `reserved_at < NOW() - <ttl>` filter, or (b) hold the reservation in a Postgres advisory lock with transaction scope (auto-released on process exit) instead of a durable row. The Phase-1 PK-reservation pattern survives both evolutions; only the cleanup mechanism changes. Track at the platform-level when a real multi-tenant trigger appears (see formspec-stack `thoughts/plans/2026-05-18-end-state-substrate-closeout.md` long-term question 2 on `ScopedAdvisoryLease` backend neutrality).
+
+**Why this is operational, not Core.** Core §17 (Append Idempotency Contract) fixes byte-level append idempotency; bundle publication is downstream of append and uses a different identity (`(bundle_scope, seal_version)`, not `(ledger_scope, idempotency_key)`). The dead-reservation concern is adapter-shaped: the SQLite and in-memory bundle-publication adapters have no equivalent failure mode. Conformant Phase-1 verifiers do not observe this state; this subsection is operator-facing.
+
 ---
 
 ## 19. Delegated-Compute Honesty
