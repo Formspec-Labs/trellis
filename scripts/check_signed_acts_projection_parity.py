@@ -276,6 +276,134 @@ def check_cross_runtime_manifest_byte_identity() -> None:
             )
 
 
+def check_cross_runtime_seal_fence_parity() -> None:
+    """Assert Python `verify_seal_fence_extension` (Task C2) produces the
+    same outcome as Rust `verify_seal_fence_extension`
+    (`integrity-stack/crates/integrity-verify/src/trellis/export.rs:996`)
+    across every committed export fixture, on a synthetic seal-fence
+    extension built from each fixture's archive members.
+
+    The export-fixture corpus does not yet ship the
+    `trellis.export.seal-fence.v1` extension (the Rust unit tests at
+    `export.rs:1162` construct one on the fly via `sealed_export_package`).
+    This parity gate replicates that pattern in Python so the Python
+    verifier is exercised against the full committed corpus AND against
+    every Rust `SealFenceTamper` variant at `export.rs:1153`.
+
+    Cross-runtime parity follows from the primitives being byte-identical:
+    canonical-CBOR §4.2.2 (Task A2 byte oracle), `domain_separated_sha256`
+    (Task A2 byte oracle), and SHA-256(member-bytes). If any of those drift,
+    `check_cross_runtime_manifest_byte_identity` and this gate both
+    surface the divergence.
+    """
+    from trellis_py import verify as core
+    from trellis_py.verify_export import (
+        SEAL_FENCE_EXPORT_EXTENSION,
+        SEAL_FENCE_IDENTITY_RULE,
+        export_attempt_id,
+        verify_seal_fence_extension,
+    )
+
+    export_fixtures = [
+        "export/006-signature-affirmations-inline",
+        "export/007-signature-admission-failed-inline",
+        "export/008-signed-acts-fallback-act-id",
+        "export/009-signed-acts-manifest-only",
+        "export/009-erasure-evidence-inline",
+    ]
+
+    # Mirror of Rust `SealFenceTamper` variants at `export.rs:1153`. Each
+    # tuple is (mutator, expected Python finding kind). Rust treats every
+    # variant as fatal `ManifestPayloadInvalid`; Python's typed kinds
+    # localize the diagnostic. Both runtimes surface the same five
+    # categories of mismatch.
+    tampers: list[tuple[str, callable, str]] = [
+        ("IdentityRule",
+         lambda sf: sf.__setitem__("identity_rule", "trellis-export-seal-fence-test"),
+         "seal_fence_identity_rule_mismatch"),
+        ("ExportAttemptId",
+         lambda sf: sf.__setitem__("export_attempt_id", "sha256:wrong"),
+         "seal_fence_export_attempt_id_mismatch"),
+        ("EventsDigest",
+         lambda sf: sf.__setitem__("events_digest", b"\xaa" * 32),
+         "seal_fence_events_digest_recompute_mismatch"),
+        ("HeadCheckpointDigest",
+         lambda sf: sf.__setitem__("head_checkpoint_digest", b"\xbb" * 32),
+         "seal_fence_head_checkpoint_digest_recompute_mismatch"),
+        ("PolicyClosureDigest",
+         lambda sf: sf.__setitem__("policy_closure_digest", b"\xcc" * 32),
+         "seal_fence_policy_closure_digest_recompute_mismatch"),
+    ]
+
+    import copy as _copy
+    import cbor2 as _cbor2
+
+    for fixture in export_fixtures:
+        export_zip_path = VECTORS / fixture / "expected-export.zip"
+        if not export_zip_path.is_file():
+            raise AssertionError(f"{fixture} expected-export.zip is missing")
+        archive = core.parse_export_zip(export_zip_path.read_bytes())
+        manifest_sign1 = core._parse_sign1_bytes(archive["000-manifest.cbor"])  # noqa: SLF001
+        manifest_map = _cbor2.loads(manifest_sign1.payload)
+        events = core._parse_sign1_array(archive["010-events.cbor"])  # noqa: SLF001
+        if not events:
+            raise AssertionError(f"{fixture} has no events; cannot build seal-fence")
+        hw = core._decode_event_details(events[-1])  # noqa: SLF001
+        scope = bytes(core._map_lookup_bytes(manifest_map, "scope"))  # noqa: SLF001
+        events_digest = core._map_lookup_fixed_bytes(  # noqa: SLF001
+            manifest_map, "events_digest", 32
+        )
+        head_ck_digest = core._map_lookup_fixed_bytes(  # noqa: SLF001
+            manifest_map, "head_checkpoint_digest", 32
+        )
+        closure_bytes = archive.get("067-policy-closure.cbor")
+        closure_digest = (
+            core._sha256(closure_bytes) if closure_bytes is not None else None  # noqa: SLF001
+        )
+        seal_version = len(events)
+        attempt = export_attempt_id(
+            scope, seal_version, hw.sequence, hw.canonical_event_hash
+        )
+        seal_fence = {
+            "identity_rule": SEAL_FENCE_IDENTITY_RULE,
+            "bundle_scope": scope,
+            "export_attempt_id": attempt,
+            "seal_version": seal_version,
+            "event_count": len(events),
+            "high_water_sequence": hw.sequence,
+            "high_water_event_hash": hw.canonical_event_hash,
+            "head_checkpoint_digest": head_ck_digest,
+            "events_digest": events_digest,
+            "policy_closure_digest": closure_digest,
+        }
+        base_extensions = _copy.deepcopy(manifest_map.get("extensions", {}) or {})
+        base_extensions[SEAL_FENCE_EXPORT_EXTENSION] = seal_fence
+        manifest_map_sealed = dict(manifest_map)
+        manifest_map_sealed["extensions"] = base_extensions
+
+        # Happy path: synthetic seal-fence over unmodified members.
+        findings = verify_seal_fence_extension(archive, manifest_map_sealed)
+        if findings:
+            raise AssertionError(
+                f"{fixture} synthetic seal-fence happy path emitted findings: "
+                f"{[(f.kind, f.detail) for f in findings]}"
+            )
+
+        # Every tamper variant: at least one finding of the expected kind.
+        for tamper_name, mutate, expected_kind in tampers:
+            tampered_ext = _copy.deepcopy(base_extensions)
+            mutate(tampered_ext[SEAL_FENCE_EXPORT_EXTENSION])
+            tampered_manifest = dict(manifest_map)
+            tampered_manifest["extensions"] = tampered_ext
+            findings = verify_seal_fence_extension(archive, tampered_manifest)
+            kinds = [f.kind for f in findings]
+            if expected_kind not in kinds:
+                raise AssertionError(
+                    f"{fixture} tamper {tamper_name} expected finding "
+                    f"{expected_kind!r}, got {kinds}"
+                )
+
+
 def main() -> int:
     try:
         import cbor2  # noqa: F401
@@ -300,9 +428,10 @@ def main() -> int:
 
     check_python_verifier_vectors()
     check_cross_runtime_manifest_byte_identity()
+    check_cross_runtime_seal_fence_parity()
     print(
-        "OK: signed-acts projection generator, Python verifier, and "
-        "cross-runtime 068 byte-identity all match the corpus"
+        "OK: signed-acts projection generator, Python verifier, "
+        "cross-runtime 068 byte-identity, and seal-fence parity all match the corpus"
     )
     return 0
 

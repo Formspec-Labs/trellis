@@ -4612,6 +4612,23 @@ def verify_export_zip(
     except VerifyError as exc:
         return VerificationReport.fatal("events_invalid", f"failed to decode 010-events.cbor: {exc}")
 
+    # Core §18.3e seal-fence extension — substrate-anchored, deterministic
+    # identity rule that proves an export bundle is the unique sealed
+    # snapshot of (scope, high_water_event). Mirrors Rust dispatch in
+    # `verify_export_zip` at
+    # `integrity-stack/crates/integrity-verify/src/trellis/export.rs:452`
+    # which calls `verify_seal_fence_extension` and short-circuits with
+    # `VerificationReport::fatal(ManifestPayloadInvalid, message)` on any
+    # mismatch. Python uses the same fatal-on-mismatch dispatch for
+    # cross-runtime parity at the report level — the typed per-tamper
+    # finding kinds (e.g. `seal_fence_export_attempt_id_mismatch`) ride
+    # in the finding for direct callers of the standalone verifier.
+    from trellis_py.verify_export import verify_seal_fence_extension as _verify_seal_fence
+    seal_fence_findings = _verify_seal_fence(archive, manifest_map)
+    if seal_fence_findings:
+        first = seal_fence_findings[0]
+        return VerificationReport.fatal("manifest_payload_invalid", first.detail)
+
     payload_blobs: dict[bytes, bytes] = {}
     for name, blob in archive.items():
         if not name.startswith("060-payloads/") or not name.endswith(".bin"):
