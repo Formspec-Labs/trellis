@@ -18,6 +18,75 @@ cross-commit wave context that a raw log cannot reconstruct.
 
 ## Wave-by-wave dispatch history
 
+### Wave 52 (2026-05-18) — Bundle Verifier Completion + Parity & Hygiene Sweep — v1.2.0
+
+Closes the Wave 51 FOLLOWUPS load: lands the verifier sweep that Wave 51 A4 deferred (`bundle_unbound_member` over §19 step 3.i), promotes the matching test vector (TR-CORE-181) and the conformance routing (TR-CORE-180), and clears the parity / hygiene tickets opened during preflight. Plan: `formspec-stack/thoughts/plans/2026-05-19-bundle-verifier-completion-and-parity-hygiene.md`. No Phase-1 wire-shape change — the substrate gains a verifier sweep and tightens consumer-side admission honesty around already-shipped envelope capacity.
+
+Stream-1 (spec edits + substrate code):
+
+- trellis `59de0d9c` — Task 1.a: Core §19 step 3.i "both-fire" rule + §19.1 row verified extant (no spec drift introduced; ratification follow-on captured).
+- integrity-stack `b15f53f` — Task 2.a: Rust `bundle_unbound_member` sweep in `integrity-verify::trellis::export` with unit coverage for both-fire + stray-member-only paths.
+- trellis `a5fc9d1` — Task 2.b: Python `trellis-py` mirror of the §19 step 3.i sweep with byte-parity tests against the Rust corpus.
+- trellis `fcd1897` — Task 2.c: tightened bundle-derive validation in Rust + Python so the §19 oracle is the only producer of the bound-member set.
+- trellis `de59d71` — Task 2.e: Python parse field-order reorder so verifier path matches the Rust struct discipline.
+- trellis `47e6c58` — Task 3.a: conformance routing in `trellis-conformance` to fire the bundle-unbound oracle, with a guard test that pins the routing decision.
+- trellis `ad746bf` — Task 2.d: encode-side docstring honesty pass (the encode helpers are not validators).
+- trellis `2ccc6b2` — Task 2.f: `cbor2.CBORTag` Phase-1 restriction docstring (consumer-side admission story).
+
+Stream-2 (fixtures + parity):
+
+- trellis `b6b45b1` — Task 3.b: fixture `verify/023-bundle-unbound-member-stray` + substrate-export-verifier parity gate (4th gate in `check_cross_runtime_parity.py`).
+- trellis `ea85795` — Task 3.c: fixture `verify/027-bundle-supersession-unbound-both-fire` + Python/Rust drift co-fix on the both-fire rule.
+- trellis `66af52a` — Task 3.d: FP6 dup-key regression test pinning the canonical CBOR R3 distinguishing case.
+
+Stream-3 (matrix + spec hygiene):
+
+- trellis `356005f` — Wave 6 Tasks 5.a + 5.b: TR-CORE-180 closed (routing); TR-CORE-181 promoted from `spec-cross-ref` to `test-vector`.
+- trellis `437eb41` — Wave 3 F1+F2 remediation: parity-script hygiene + dormant-divergence split between Rust + Python verifier surfaces.
+- parent `b71439a` — ADR 0112 D-6 published-shape strengthening ratified at parent level (cross-stack pin).
+- trellis `13ded2a` — Task 6.a: `check-specs.py` corpus-manifest scanner retires the prior manifest-walk workaround.
+
+Stream-4 (OpenAPI + WOS HTTP):
+
+- workspec-server `a328df8` — Task 4.a: 11 handlers gain `utoipa` 423 response annotations.
+- work-spec `90795cc6` — Task 4.a: registry regen + broader OpenAPI patches for the 423 surface.
+- workspec-server `229d1a5` — Task 4.b: HTTP integration test pinning the 423 lock-busy surface end-to-end.
+
+Stream-5 (cross-stack hygiene + binding rename):
+
+- formspec `fb6979e9` — Task 1.c G4: Rust byte-authority pin in the binding handoff.
+- formspec-server `9556570a` — Task 6.c: synthetic mock label rename.
+- formspec-trellis-bindings `e8e46cc` — Task 1.b: inner crate rename to `formspec-signature-trellis-binding`.
+- formspec-server `5d715c4` — Task 1.b: consumer-side adoption of the renamed binding.
+- trellis `6743a63` — Task 1.b: boundary-baseline test string updates.
+- workspec-server `c62d599` — Task 1.b: doc updates carrying the rename.
+- parent `f3669b1` — Task 1.b: parent `.gitmodules` + Makefile + CLAUDE.md + filemap + pointer bumps (note: commit message was clobbered; content is correct).
+- parent `7d3d6b99` — Wave 1 remediation: formspec pointer bump + ADR 0112 D-3 enumeration refresh.
+- stack-common `7896b2e5` — Task 6.b: 12-crate count + `derive_lease_key` algorithm pin.
+
+Verification (final gate — all exit 0 except the documented pre-existing lint):
+
+- `(cd trellis && python3 scripts/check_cross_runtime_parity.py)` — four gates pass: `generic-cbor-profile`, `signed-acts-projection`, `seal-fence`, `substrate-export-verifier`.
+- `make -C trellis test-scripts` — reaches the parity script; all script gates green.
+- `(cd integrity-stack && cargo nextest run -p integrity-verify)` — 47/47 pass (covers the new bundle-unbound sweep + both-fire unit tests).
+- `(cd trellis && cargo nextest run -p trellis-verify-wos -p trellis-conformance)` — 87/87 pass.
+- `(cd trellis && python3 -m pytest trellis-py/tests/)` — 193/193 pass.
+- `python3 trellis/scripts/check-specs.py` — Trellis spec checks passed (only Phase-1 key-class admission warnings, as expected).
+- `(cd workspec-server && cargo nextest run -p wos-server)` — 294/294 pass, 1 cleanly skipped (`case_source_lock_busy_http.rs` — gated on `storage-postgres` feature + live Postgres; allowed skip per plan).
+- `(cd formspec-server && cargo nextest run -p formspec-server)` — 86/86 pass.
+- `make -C stack-common lint` — `lint-locks: case-source locking integrity OK`.
+- `git diff --check` — clean across parent + all touched submodules.
+
+**Documented skip:** root `make lint` blocks on pre-existing `clippy::result_large_err` errors in `trellis/crates/trellis-service-client/src/lib.rs` (9 sites). Verified pre-existing at the `v1.1.0` tag by checking `crates/trellis-service-client/src/lib.rs` out of `v1.1.0` and re-running `cargo clippy -p trellis-service-client -- -D warnings` — identical 9-error failure. Wave 8 did not introduce them. Open as a separate `StackError` boxing follow-up; not a v1.2.0 blocker.
+
+What changed for the end user:
+
+- **External verifier author** gains the §19 step 3.i sweep semantics + a 4th cross-runtime parity gate (`substrate-export-verifier`) — no more silent acceptance of stray archive members or unbound bundle entries.
+- **Consumer-side admission honesty** (Tasks 2.c–2.f) means encode helpers no longer claim validation they do not perform; admission rules are pinned to the verifier oracle.
+- **Trellis maintainer** retags `v1.2.0` with the bundle-verifier story fully closed plus the binding rename hygiene that DI-005 was waiting on.
+
+Closes: TR-CORE-180 + TR-CORE-181 + all Wave 51 FOLLOWUPS open items.
+
 ### Wave 51 (2026-05-18) — Substrate Externalization Preflight — v1.1.0 retag
 
 Next coherent-snapshot tag (`v1.1.0`) gated on **public conformance / DX
